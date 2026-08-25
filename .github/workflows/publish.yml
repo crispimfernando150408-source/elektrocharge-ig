@@ -1,0 +1,26 @@
+name: Publica IG 19h
+
+on:
+  schedule:
+    # 22:00 UTC = 19:00 America/Sao_Paulo (Brasil sem horário de verão).
+    # O script só publica se houver um post com scheduleAt == hoje (BRT); senão, no-op.
+    - cron: '0 22 * * *'
+  workflow_dispatch:      # permite disparo manual pra testar
+    inputs:
+      post:
+        description: 'Caminho de um post específico (opcional, ex: posts/semana35/post-ter-ipi.json)'
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Publicar post do dia
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: node ig/publish-ci.mjs ${{ github.event.inputs.post }}
