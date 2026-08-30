@@ -24,8 +24,18 @@ async function graph(path, { method='GET', params={} } = {}) {
   return body;
 }
 
-// "hoje" em America/Sao_Paulo (YYYY-MM-DD)
-const todayBR = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+// "hoje" e "hora" em America/Sao_Paulo
+const now = new Date();
+const todayBR = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit' }).format(now);
+const brtHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone:'America/Sao_Paulo', hour:'2-digit', hour12:false }).format(now));
+const manual = !!process.argv[2];  // disparo manual com post explícito ignora as guardas de horário
+
+// Guarda de janela: cron do GitHub atrasa (às vezes horas). Se cair fora da noite,
+// é atraso — não publico, pra não sair de madrugada nem pegar o dia errado.
+if (!manual && (brtHour < 18 || brtHour > 23)) {
+  console.log(`Agora são ${brtHour}h BRT — fora da janela 18–23h (cron atrasou). Não publico. Nada a fazer.`);
+  process.exit(0);
+}
 
 // escolhe o post: arg explícito, ou o cujo scheduleAt (data) == hoje BR
 function pickPost() {
@@ -50,6 +60,16 @@ const rawUrl = p => `https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BR
 const urls = images.map(rawUrl);
 console.log(`Post: ${file} (${todayBR}) | ${urls.length} imagens`);
 urls.forEach(u => console.log('  ', u));
+
+// Idempotência: se um post com esta MESMA legenda já está no feed, não republica.
+// Fonte da verdade = a própria conta. Mata duplicata mesmo se o cron rodar 2×.
+try {
+  const recent = await graph(`${IG_USER_ID}/media`, { params:{ fields:'caption', limit:'25' } });
+  if ((recent.data||[]).some(m => (m.caption||'').trim() === (caption||'').trim())) {
+    console.log('Este post já está no feed (mesma legenda). Pulo pra não duplicar. Nada a fazer.');
+    process.exit(0);
+  }
+} catch (e) { console.log('aviso: não deu pra checar duplicado, sigo:', e.message); }
 
 // monta carrossel (ou imagem única)
 let containerId;

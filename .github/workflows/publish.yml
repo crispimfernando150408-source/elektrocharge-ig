@@ -2,9 +2,13 @@ name: Publica IG 19h
 
 on:
   schedule:
-    # 22:00 UTC = 19:00 America/Sao_Paulo (Brasil sem horário de verão).
-    # O script só publica se houver um post com scheduleAt == hoje (BRT); senão, no-op.
-    - cron: '0 22 * * *'
+    # Cron do GitHub atrasa (às vezes horas), então disparamos 4× na janela da noite:
+    # 19, 20, 21 e 22h BRT. A trava de idempotência garante que só 1 publica; o resto é no-op.
+    # A guarda de janela (18–23h BRT) no script impede post de madrugada se o atraso for grande.
+    - cron: '0 22 * * *'   # 19:00 BRT
+    - cron: '0 23 * * *'   # 20:00 BRT
+    - cron: '0 0 * * *'    # 21:00 BRT (00:00 UTC = 21:00 BRT do dia anterior)
+    - cron: '0 1 * * *'    # 22:00 BRT
   workflow_dispatch:      # permite disparo manual pra testar
     inputs:
       post:
