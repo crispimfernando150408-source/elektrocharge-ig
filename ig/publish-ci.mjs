@@ -54,12 +54,15 @@ function pickPost() {
 
 const file = pickPost();
 if (!file) { console.log(`Nenhum post agendado pra hoje (${todayBR}). Nada a fazer.`); process.exit(0); }
-const { caption, images } = JSON.parse(readFileSync(file,'utf8'));
-if (!images?.length) throw new Error('Post sem imagens: ' + file);
+const { caption, images, video } = JSON.parse(readFileSync(file,'utf8'));
+if (!images?.length && !video) throw new Error('Post sem imagens nem vídeo: ' + file);
+// Imagens: raw.githubusercontent serve image/jpeg (a API aceita). Vídeo: raw serve
+// octet-stream e o IG recusa — então o mp4 vai por jsDelivr, que serve video/mp4.
 const rawUrl = p => `https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${p}`;
-const urls = images.map(rawUrl);
-console.log(`Post: ${file} (${todayBR}) | ${urls.length} imagens`);
-urls.forEach(u => console.log('  ', u));
+const cdnUrl = p => `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/${p}`;
+const urls = (images||[]).map(rawUrl);
+console.log(`Post: ${file} (${todayBR}) | ${video ? 'REEL: '+video : urls.length+' imagens'}`);
+(video ? [cdnUrl(video)] : urls).forEach(u => console.log('  ', u));
 
 // Idempotência: se um post com esta MESMA legenda já está no feed, não republica.
 // Fonte da verdade = a própria conta. Mata duplicata mesmo se o cron rodar 2×.
@@ -71,9 +74,12 @@ try {
   }
 } catch (e) { console.log('aviso: não deu pra checar duplicado, sigo:', e.message); }
 
-// monta carrossel (ou imagem única)
-let containerId;
-if (urls.length === 1) {
+// monta o container: REEL (vídeo), imagem única, ou carrossel
+let containerId, maxPolls = 20;
+if (video) {
+  containerId = (await graph(`${IG_USER_ID}/media`, { method:'POST', params:{ media_type:'REELS', video_url:cdnUrl(video), caption, share_to_feed:'true' } })).id;
+  maxPolls = 40;  // vídeo demora mais pra processar
+} else if (urls.length === 1) {
   containerId = (await graph(`${IG_USER_ID}/media`, { method:'POST', params:{ image_url:urls[0], caption } })).id;
 } else {
   const children = [];
@@ -82,7 +88,7 @@ if (urls.length === 1) {
 }
 console.log('container:', containerId);
 
-for (let i=0;i<20;i++){
+for (let i=0;i<maxPolls;i++){
   const { status_code } = await graph(containerId, { params:{ fields:'status_code' } });
   if (status_code === 'FINISHED') break;
   if (status_code === 'ERROR') throw new Error('Container deu ERROR no processamento.');
