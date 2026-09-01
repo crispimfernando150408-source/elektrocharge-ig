@@ -2,13 +2,18 @@ name: Publica IG 19h
 
 on:
   schedule:
-    # Cron do GitHub atrasa (às vezes horas), então disparamos 4× na janela da noite:
-    # 19, 20, 21 e 22h BRT. A trava de idempotência garante que só 1 publica; o resto é no-op.
-    # A guarda de janela (18–23h BRT) no script impede post de madrugada se o atraso for grande.
-    - cron: '0 22 * * *'   # 19:00 BRT
-    - cron: '0 23 * * *'   # 20:00 BRT
-    - cron: '0 0 * * *'    # 21:00 BRT (00:00 UTC = 21:00 BRT do dia anterior)
-    - cron: '0 1 * * *'    # 22:00 BRT
+    # O GitHub DESCARTA/atrasa crons em hora cheia (muita gente agenda em :00).
+    # Solução: minutos "quebrados" e MUITAS tentativas na janela da noite (19–22h BRT).
+    # Idempotência garante que só 1 publica; o resto é no-op. Guarda de janela (18–23h BRT)
+    # impede post de madrugada. Só precisa que UMA dessas pegue.
+    - cron: '9 22 * * *'    # 19:09 BRT
+    - cron: '27 22 * * *'   # 19:27 BRT
+    - cron: '44 22 * * *'   # 19:44 BRT
+    - cron: '13 23 * * *'   # 20:13 BRT
+    - cron: '38 23 * * *'   # 20:38 BRT
+    - cron: '11 0 * * *'    # 21:11 BRT
+    - cron: '41 0 * * *'    # 21:41 BRT
+    - cron: '23 1 * * *'    # 22:23 BRT
   workflow_dispatch:      # permite disparo manual pra testar
     inputs:
       post:
