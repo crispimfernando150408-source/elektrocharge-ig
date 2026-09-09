@@ -60,7 +60,15 @@ if (!images?.length && !video) throw new Error('Post sem imagens nem vídeo: ' +
 // octet-stream e o IG recusa — então o mp4 vai por jsDelivr, que serve video/mp4.
 const rawUrl = p => `https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/${p}`;
 const cdnUrl = p => `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/${p}`;
-const urls = (images||[]).map(rawUrl);
+// Reserva: se o raw estiver fora (503 Fastly, visto em 09/09/2026), a imagem vai pelo jsDelivr.
+async function pickUrl(p) {
+  const raw = rawUrl(p);
+  try { const r = await fetch(raw, { method:'HEAD' }); if (r.ok) return raw; console.log(`  raw ${r.status} -> jsDelivr: ${p}`); }
+  catch (e) { console.log(`  raw falhou (${e.message}) -> jsDelivr: ${p}`); }
+  return cdnUrl(p);
+}
+const urls = [];
+for (const p of (images||[])) urls.push(await pickUrl(p));
 console.log(`Post: ${file} (${todayBR}) | ${video ? 'REEL: '+video : urls.length+' imagens'}`);
 (video ? [cdnUrl(video)] : urls).forEach(u => console.log('  ', u));
 
