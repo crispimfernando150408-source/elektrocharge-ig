@@ -8,7 +8,7 @@
 // Uso: node ig/publish-ci.mjs [caminho-do-post.json] [--dry]
 //   sem arg = escolhe pelo dia · --dry = resolve e loga, mas não publica nem cria container.
 import { readFileSync } from 'node:fs';
-import { criarGraph, formatarErro, pickPostLocal, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
+import { criarGraph, formatarErro, paramsDoReel, pickPostLocal, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
 
 const DRY = process.argv.includes('--dry');
 const argPost = process.argv.slice(2).find((a) => !a.startsWith('--')) || null;
@@ -84,6 +84,10 @@ if (origem === 'api') {
 }
 console.log(`Post: ${post.file || post.id} (${todayBR}, fonte: ${origem}) | ${videoUrl ? 'REEL: ' + videoUrl : urls.length + ' imagens'}`);
 (videoUrl ? [videoUrl] : urls).forEach((u) => console.log('  ', u));
+if (videoUrl) {
+  if (urls[0]) console.log(`capa do reel: ${urls[0]}`);
+  else console.log('capa do reel: sem imagem, usando o primeiro quadro (thumb_offset=0)');
+}
 
 const graph = criarGraph({ accessToken: IG_ACCESS_TOKEN });
 
@@ -114,7 +118,7 @@ try {
   // monta o container: REEL (vídeo), imagem única, ou carrossel
   let containerId, maxPolls = 20;
   if (videoUrl) {
-    containerId = (await graph(`${IG_USER_ID}/media`, { method: 'POST', params: { media_type: 'REELS', video_url: videoUrl, caption, share_to_feed: 'true' } })).id;
+    containerId = (await graph(`${IG_USER_ID}/media`, { method: 'POST', params: paramsDoReel({ videoUrl, coverUrl: urls[0], caption }) })).id;
     maxPolls = 40; // vídeo demora mais pra processar
   } else if (urls.length === 1) {
     containerId = (await graph(`${IG_USER_ID}/media`, { method: 'POST', params: { image_url: urls[0], caption } })).id;
