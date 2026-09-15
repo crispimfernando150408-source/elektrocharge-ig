@@ -140,3 +140,12 @@ export function pickPostLocal({ todayBR, arg, postsDir = 'posts', readdirSyncFn 
   }
   return null;
 }
+
+// Parâmetros do container de reel. Com capa, manda cover_url (imagens[0] do post).
+// Sem capa, fixa o primeiro quadro via thumb_offset em vez de deixar o Instagram escolher.
+export function paramsDoReel({ videoUrl, coverUrl, caption }) {
+  const params = { media_type: 'REELS', video_url: videoUrl, caption, share_to_feed: 'true' };
+  if (coverUrl) params.cover_url = coverUrl;
+  else params.thumb_offset = '0';
+  return params;
+}

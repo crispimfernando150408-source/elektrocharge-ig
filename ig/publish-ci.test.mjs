@@ -3,7 +3,7 @@
 // que importa (escolha da fonte, retry, reporte) mora em lib.mjs e é testada aqui direto.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buscarPostHoje, comRetry, criarGraph, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
+import { buscarPostHoje, comRetry, criarGraph, paramsDoReel, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
 
 function respostaJson(status, corpo) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(corpo), json: async () => corpo };
@@ -179,4 +179,34 @@ test('pollContainer estoura em timeout total em vez de ficar preso', async () =>
 test('pollContainer estoura se o Graph reportar ERROR', async () => {
   const graph = async () => ({ status_code: 'ERROR' });
   await assert.rejects(() => pollContainer({ graph, containerId: 'c1', sleepFn: async () => {} }), /ERROR/);
+});
+
+// ---------- paramsDoReel ----------
+
+test('paramsDoReel com capa inclui cover_url e não tem thumb_offset', () => {
+  const params = paramsDoReel({
+    videoUrl: 'https://cdn.example/reel.mp4',
+    coverUrl: 'https://cdn.example/capa.jpg',
+    caption: 'legenda intacta do reel',
+  });
+  assert.equal(params.media_type, 'REELS');
+  assert.equal(params.video_url, 'https://cdn.example/reel.mp4');
+  assert.equal(params.cover_url, 'https://cdn.example/capa.jpg');
+  assert.equal(params.share_to_feed, 'true');
+  assert.equal(params.caption, 'legenda intacta do reel');
+  assert.equal('thumb_offset' in params, false);
+});
+
+test('paramsDoReel sem capa inclui thumb_offset e não tem cover_url', () => {
+  const params = paramsDoReel({
+    videoUrl: 'https://cdn.example/reel.mp4',
+    coverUrl: null,
+    caption: 'legenda intacta do reel',
+  });
+  assert.equal(params.media_type, 'REELS');
+  assert.equal(params.video_url, 'https://cdn.example/reel.mp4');
+  assert.equal(params.thumb_offset, '0');
+  assert.equal(params.share_to_feed, 'true');
+  assert.equal(params.caption, 'legenda intacta do reel');
+  assert.equal('cover_url' in params, false);
 });

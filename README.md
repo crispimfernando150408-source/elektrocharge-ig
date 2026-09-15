@@ -16,7 +16,7 @@ Conteúdo), com aprovação e faixa (`auto`/`aprovar`/`bloqueado`) por post.
 - `ig/publish-ci.mjs` chama `GET <CONTEUDO_API_BASE>/api/conteudo/hoje` com
   `Authorization: Bearer <CONTEUDO_SECRET>`. `post: null` → nada pra hoje, sai 0.
   `imagens`/`video` já vêm como URLs públicas (Supabase Storage), não passam por
-  `raw.githubusercontent`/jsDelivr.
+  `raw.githubusercontent`/jsDelivr. A capa do reel vem de `imagens[0]` do post.
 - Depois de tentar publicar, reporta pra `POST <base>/api/conteudo/posts/<id>/publicado`
   (mesmo Bearer): `{ ig_media_id }` no sucesso, `{ erro }` na falha (nunca os dois).
   Se o dedupe por legenda encontrar o post já publicado, reporta `publicado` com o
