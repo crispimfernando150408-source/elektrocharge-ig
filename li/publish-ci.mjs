@@ -12,7 +12,10 @@ const DRY = process.argv.includes('--dry');
 const { CONTEUDO_API_BASE, CONTEUDO_SECRET } = process.env;
 const CONTA = process.env.LI_CONTA || 'fernando';
 const cred = credenciaisLi(process.env, CONTA);
-if (!cred) { console.log(`Conta ${CONTA} sem segredo do LinkedIn configurado. Pulo.`); process.exit(0); }
+if (!cred) {
+  if (CONTA === 'fernando') { console.error('Faltam Secrets LI_ACCESS_TOKEN / LI_PERSON_URN'); process.exit(1); }
+  console.log(`Conta ${CONTA} sem segredo do LinkedIn configurado. Pulo.`); process.exit(0);
+}
 for (const [k, v] of Object.entries({ CONTEUDO_API_BASE, CONTEUDO_SECRET })) {
   if (!v) { console.error(`Falta a env ${k}`); process.exit(1); }
 }

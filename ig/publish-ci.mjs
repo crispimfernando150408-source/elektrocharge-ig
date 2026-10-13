@@ -23,7 +23,12 @@ const {
 const BRANCH = GITHUB_REF_NAME || 'main';
 const CONTA = process.env.IG_CONTA || 'elektro';
 const cred = credenciaisIg(process.env, CONTA);
-if (!cred) { console.log(`Conta ${CONTA} sem segredo do Instagram configurado. Pulo.`); process.exit(0); }
+// Conta de origem (elektro) sem segredo é erro, como sempre foi; conta nova sem segredo só pula.
+if (!cred) {
+  if (CONTA === 'elektro') { console.error('Faltam Secrets IG_ACCESS_TOKEN / IG_USER_ID'); process.exit(1); }
+  console.log(`Conta ${CONTA} sem segredo do Instagram configurado. Pulo.`); process.exit(0);
+}
+if (argPost && CONTA !== 'elektro') { console.log(`Post local (${argPost}) só vale para a conta elektro. Pulo a perna ${CONTA}.`); process.exit(0); }
 const IG_USER_ID = cred.userId;
 
 const manual = !!argPost || DRY; // disparo manual ou --dry ignora as guardas de horário

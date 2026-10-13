@@ -6,7 +6,10 @@ import { execFileSync } from 'node:child_process';
 const CONTA = process.env.IG_CONTA || 'elektro';
 const SECRET = CONTA === 'elektro' ? 'IG_ACCESS_TOKEN' : `IG_ACCESS_TOKEN_${CONTA.toUpperCase()}`;
 const tok = process.env[SECRET];
-if (!tok) { console.log(`Conta ${CONTA} sem ${SECRET} configurado. Pulo.`); process.exit(0); }
+if (!tok) {
+  if (CONTA === 'elektro') { console.error(`Sem ${SECRET}`); process.exit(1); }
+  console.log(`Conta ${CONTA} sem ${SECRET} configurado. Pulo.`); process.exit(0);
+}
 
 const url = new URL('https://graph.instagram.com/refresh_access_token');
 url.searchParams.set('grant_type', 'ig_refresh_token');
