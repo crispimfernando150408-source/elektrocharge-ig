@@ -64,3 +64,33 @@ export async function reportarPublicadoRede({ apiBase, secret, id, publicado_id,
   if (!res.ok) throw new Error(`API conteudo (publicado) respondeu ${res.status}: ${await res.text().catch(() => '')}`);
   return res.json();
 }
+
+/** Normaliza para comparar legenda da fila com o `text` da API v2 (entidades HTML, t.co, espaços). */
+function normalizarTexto(s) {
+  return String(s ?? '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Mesmo texto, ignorando escapes HTML, URLs (viram t.co no X) e espaços. */
+export function mesmoTexto(a, b) {
+  return normalizarTexto(a) === normalizarTexto(b);
+}
+
+/**
+ * Adapta erro HTTP 5xx das nossas libs ("respondeu 503") ao `comRetry` da ig/lib.mjs,
+ * que só reconhece "Graph 5xx" e falha de rede. 4xx segue direto, sem retry.
+ */
+export function comoTransiente(fn) {
+  return async () => {
+    try { return await fn(); }
+    catch (e) {
+      const m = /respondeu (\d{3})/.exec(e?.message ?? '');
+      const status = e?.status ?? (m ? Number(m[1]) : undefined);
+      if (status >= 500) { const novo = new Error(`Graph ${status} (transiente): ${e.message}`); novo.status = status; throw novo; }
+      throw e;
+    }
+  };
+}

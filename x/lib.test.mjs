@@ -2,7 +2,7 @@
 // Run: node --test x/lib.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assinarOAuth1, buscarPostHojeRede, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
+import { assinarOAuth1, buscarPostHojeRede, comoTransiente, mesmoTexto, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
 
 function respostaJson(status, corpo, headers = {}) {
   return { ok: status >= 200 && status < 300, status, headers: { get: (k) => headers[k.toLowerCase()] ?? null }, text: async () => JSON.stringify(corpo), json: async () => corpo };
@@ -61,4 +61,28 @@ test('reportarPublicadoRede manda publicado_id ou erro, nunca os dois', async ()
   await reportarPublicadoRede({ apiBase: 'http://api', secret: 's', id: 'p', publicado_id: '777', fetchImpl });
   await reportarPublicadoRede({ apiBase: 'http://api', secret: 's', id: 'p', erro: 'x', fetchImpl });
   assert.deepEqual(corpos, [{ publicado_id: '777' }, { erro: 'x' }]);
+});
+
+// Review Focus 4 (idempotência por texto): a decisão "já está no X" vive em mesmoTexto.
+test('mesmoTexto reconhece legenda com & que a API devolve como &amp;', () => {
+  assert.equal(mesmoTexto('P&D em eletroposto', 'P&amp;D em eletroposto'), true);
+  assert.equal(mesmoTexto('a < b > c', 'a &lt; b &gt; c'), true);
+});
+
+test('mesmoTexto ignora URL que o X troca por t.co e espaços sobrando', () => {
+  assert.equal(mesmoTexto('Veja https://elektrocharge.com.br/blog/x  agora', 'Veja https://t.co/AbC123 agora'), true);
+});
+
+test('mesmoTexto distingue textos diferentes', () => {
+  assert.equal(mesmoTexto('Carregar em casa', 'Carregar na rua'), false);
+});
+
+test('comoTransiente marca 5xx para retry e deixa 4xx passar', async () => {
+  const { comRetry } = await import('../ig/lib.mjs');
+  let n = 0;
+  const r = await comRetry(comoTransiente(async () => { n++; if (n < 3) throw new Error('X publicar respondeu 503: x'); return 'ok'; }), { sleepFn: async () => {}, log: () => {} });
+  assert.equal(r, 'ok'); assert.equal(n, 3);
+  let m = 0;
+  await assert.rejects(comRetry(comoTransiente(async () => { m++; throw new Error('X publicar respondeu 403: dup'); }), { sleepFn: async () => {}, log: () => {} }));
+  assert.equal(m, 1);
 });
