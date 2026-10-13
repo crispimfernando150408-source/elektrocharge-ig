@@ -25,7 +25,8 @@ const reportar = (corpo) => reportarPublicadoRede({ apiBase: CONTEUDO_API_BASE, 
 
 let id;
 try {
-  ({ id } = await tentar(() => publicarUgc({ texto: post.caption, personUrn: LI_PERSON_URN, token: LI_ACCESS_TOKEN })));
+  // Sem retry na publicação: o POST não é idempotente e uma resposta perdida duplicaria o post.
+  ({ id } = await publicarUgc({ texto: post.caption, personUrn: LI_PERSON_URN, token: LI_ACCESS_TOKEN }));
   console.log(`Publicado: ${id}`);
 } catch (e) {
   console.error('Falha ao publicar:', e.message);

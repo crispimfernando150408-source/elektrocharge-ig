@@ -45,7 +45,8 @@ if (DRY) { console.log('--dry: publicaria agora. Não publico.'); process.exit(0
 
 let id;
 try {
-  ({ id } = await tentar(() => publicarTweet({ texto: post.caption, credenciais })));
+  // Sem retry na publicação: o POST não é idempotente e uma resposta perdida duplicaria o tweet.
+  ({ id } = await publicarTweet({ texto: post.caption, credenciais }));
   console.log(`Publicado: tweet ${id}`);
 } catch (e) {
   console.error('Falha ao publicar:', e.message);
