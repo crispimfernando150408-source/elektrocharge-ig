@@ -57,3 +57,33 @@ Conteúdo), com aprovação e faixa (`auto`/`aprovar`/`bloqueado`) por post.
 Actions → "Publica IG 19h" → **Run workflow** → (opcional) informe um post específico
 (fallback local). Localmente: `node ig/publish-ci.mjs --dry` resolve a fila e loga o
 que faria, sem publicar.
+
+## Contas e segredos com sufixo
+Os publicadores atendem várias contas por **matriz de conta** nos workflows
+(`strategy.matrix.conta`, `fail-fast: false`, `concurrency` por conta). Conta sem
+segredo configurado é pulada com mensagem e código 0, sem tocar nas outras.
+O nome **sem sufixo** vale para a conta de origem (Instagram = elektro; X e LinkedIn
+= fernando); as demais usam `_ELEKTRO` ou `_KAFFRA`. Só nomes aqui, nunca valores.
+
+| Rede | Conta | Secrets | Função |
+|---|---|---|---|
+| Instagram | elektro | `IG_ACCESS_TOKEN`, `IG_USER_ID` | `credenciaisIg` (`ig/lib.mjs`) |
+| Instagram | kaffra | `IG_ACCESS_TOKEN_KAFFRA`, `IG_USER_ID_KAFFRA` | idem |
+| X | fernando | `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_USER_ID` | `credenciaisX` (`x/lib.mjs`) |
+| X | elektro | `X_ACCESS_TOKEN_ELEKTRO`, `X_ACCESS_TOKEN_SECRET_ELEKTRO`, `X_USER_ID_ELEKTRO` | idem |
+| X | kaffra | `X_ACCESS_TOKEN_KAFFRA`, `X_ACCESS_TOKEN_SECRET_KAFFRA`, `X_USER_ID_KAFFRA` | idem |
+| X | todas | `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_BEARER_TOKEN` (sem sufixo) | idem |
+| LinkedIn | fernando (pessoa) | `LI_ACCESS_TOKEN`, `LI_PERSON_URN` | `credenciaisLi` (`li/lib.mjs`) |
+| LinkedIn | elektro (página) | `LI_ACCESS_TOKEN_ELEKTRO`, `LI_AUTHOR_URN_ELEKTRO` | idem |
+| LinkedIn | kaffra (página) | `LI_ACCESS_TOKEN_KAFFRA`, `LI_AUTHOR_URN_KAFFRA` | idem |
+
+Variables (não Secrets): `LI_TOKEN_EXPIRES_AT`, `LI_TOKEN_EXPIRES_AT_ELEKTRO`,
+`LI_TOKEN_EXPIRES_AT_KAFFRA` (lidas por `li/check-token.mjs`, que falha com 7 dias
+ou menos). O refresh mensal do Instagram (`ig/refresh-token.mjs`) renova e regrava
+`IG_ACCESS_TOKEN` ou `IG_ACCESS_TOKEN_KAFFRA` conforme a conta da matriz.
+
+Matrizes: `publish.yml` e `refresh-token.yml` com elektro e kaffra; `publish-x.yml`,
+`publish-li.yml` e `check-li-token.yml` com fernando, elektro e kaffra. Post de
+LinkedIn de página (elektro, kaffra) só sai por API quando houver os segredos da
+página (Community Management API); antes disso é publicado à mão pelo dashboard.
+O dashboard enxerga só a variável espelho `PUBLICADOR_<REDE>_<CONTA>=1` na Vercel.
