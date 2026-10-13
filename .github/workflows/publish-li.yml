@@ -11,13 +11,16 @@ on:
         required: false
         default: 'false'
 
-concurrency:
-  group: publish-li
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        conta: [fernando, elektro, kaffra]
+    concurrency:
+      group: publish-li-${{ matrix.conta }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,10 +28,15 @@ jobs:
           node-version: '20'
       - name: Testes do publicador
         run: node --test li/lib.test.mjs
-      - name: Publicar post do LinkedIn
+      - name: Publicar post do LinkedIn (${{ matrix.conta }})
         env:
+          LI_CONTA: ${{ matrix.conta }}
           CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
           CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
           LI_ACCESS_TOKEN: ${{ secrets.LI_ACCESS_TOKEN }}
           LI_PERSON_URN: ${{ secrets.LI_PERSON_URN }}
+          LI_ACCESS_TOKEN_ELEKTRO: ${{ secrets.LI_ACCESS_TOKEN_ELEKTRO }}
+          LI_AUTHOR_URN_ELEKTRO: ${{ secrets.LI_AUTHOR_URN_ELEKTRO }}
+          LI_ACCESS_TOKEN_KAFFRA: ${{ secrets.LI_ACCESS_TOKEN_KAFFRA }}
+          LI_AUTHOR_URN_KAFFRA: ${{ secrets.LI_AUTHOR_URN_KAFFRA }}
         run: node li/publish-ci.mjs ${{ github.event.inputs.dry == 'true' && '--dry' || '' }}

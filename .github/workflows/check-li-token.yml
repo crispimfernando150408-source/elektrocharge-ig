@@ -9,12 +9,19 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        conta: [fernando, elektro, kaffra]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Checar vencimento
+      - name: Checar vencimento (${{ matrix.conta }})
         env:
+          LI_CONTA: ${{ matrix.conta }}
           LI_TOKEN_EXPIRES_AT: ${{ vars.LI_TOKEN_EXPIRES_AT }}
+          LI_TOKEN_EXPIRES_AT_ELEKTRO: ${{ vars.LI_TOKEN_EXPIRES_AT_ELEKTRO }}
+          LI_TOKEN_EXPIRES_AT_KAFFRA: ${{ vars.LI_TOKEN_EXPIRES_AT_KAFFRA }}
         run: node li/check-token.mjs
