@@ -13,13 +13,16 @@ on:
         required: false
         default: 'false'
 
-concurrency:
-  group: publish-x
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        conta: [fernando, elektro, kaffra]
+    concurrency:
+      group: publish-x-${{ matrix.conta }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,8 +30,9 @@ jobs:
           node-version: '20'
       - name: Testes do publicador
         run: node --test x/lib.test.mjs
-      - name: Publicar post do X
+      - name: Publicar post do X (${{ matrix.conta }})
         env:
+          X_CONTA: ${{ matrix.conta }}
           CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
           CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
@@ -36,5 +40,11 @@ jobs:
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           X_USER_ID: ${{ secrets.X_USER_ID }}
+          X_ACCESS_TOKEN_ELEKTRO: ${{ secrets.X_ACCESS_TOKEN_ELEKTRO }}
+          X_ACCESS_TOKEN_SECRET_ELEKTRO: ${{ secrets.X_ACCESS_TOKEN_SECRET_ELEKTRO }}
+          X_USER_ID_ELEKTRO: ${{ secrets.X_USER_ID_ELEKTRO }}
+          X_ACCESS_TOKEN_KAFFRA: ${{ secrets.X_ACCESS_TOKEN_KAFFRA }}
+          X_ACCESS_TOKEN_SECRET_KAFFRA: ${{ secrets.X_ACCESS_TOKEN_SECRET_KAFFRA }}
+          X_USER_ID_KAFFRA: ${{ secrets.X_USER_ID_KAFFRA }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
         run: node x/publish-ci.mjs ${{ github.event.inputs.dry == 'true' && '--dry' || '' }}

@@ -29,6 +29,21 @@ export function assinarOAuth1({ method, url, params = {}, consumerKey, consumerS
   return 'OAuth ' + Object.keys(campos).sort().map((k) => `${enc(k)}="${enc(campos[k])}"`).join(', ');
 }
 
+/**
+ * Segredos do X por conta. `fernando` = nomes históricos; outras contas usam sufixo _CONTA
+ * nos tokens de usuário e no id, com o MESMO app (consumer key e secret únicos).
+ */
+export function credenciaisX(env, conta = 'fernando') {
+  const suf = conta === 'fernando' ? '' : `_${conta.toUpperCase()}`;
+  const token = env[`X_ACCESS_TOKEN${suf}`];
+  const tokenSecret = env[`X_ACCESS_TOKEN_SECRET${suf}`];
+  const userId = env[`X_USER_ID${suf}`];
+  const consumerKey = env.X_CONSUMER_KEY;
+  const consumerSecret = env.X_CONSUMER_SECRET;
+  if (!token || !tokenSecret || !userId || !consumerKey || !consumerSecret) return null;
+  return { consumerKey, consumerSecret, token, tokenSecret, userId };
+}
+
 async function lerCorpo(res) {
   const texto = await res.text();
   try { return JSON.parse(texto); } catch { return { raw: texto }; }

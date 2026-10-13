@@ -2,7 +2,7 @@
 // Run: node --test x/lib.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assinarOAuth1, buscarPostHojeRede, comoTransiente, mesmoTexto, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
+import { credenciaisX, assinarOAuth1, buscarPostHojeRede, comoTransiente, mesmoTexto, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
 
 function respostaJson(status, corpo, headers = {}) {
   return { ok: status >= 200 && status < 300, status, headers: { get: (k) => headers[k.toLowerCase()] ?? null }, text: async () => JSON.stringify(corpo), json: async () => corpo };
@@ -85,4 +85,11 @@ test('comoTransiente marca 5xx para retry e deixa 4xx passar', async () => {
   let m = 0;
   await assert.rejects(comRetry(comoTransiente(async () => { m++; throw new Error('X publicar respondeu 403: dup'); }), { sleepFn: async () => {}, log: () => {} }));
   assert.equal(m, 1);
+});
+
+test('credenciaisX: fernando sem sufixo; elektro com sufixo e mesmo app; faltando, null', () => {
+  const env = { X_CONSUMER_KEY: 'ck', X_CONSUMER_SECRET: 'cs', X_ACCESS_TOKEN: 'tf', X_ACCESS_TOKEN_SECRET: 'sf', X_USER_ID: '1', X_ACCESS_TOKEN_ELEKTRO: 'te', X_ACCESS_TOKEN_SECRET_ELEKTRO: 'se', X_USER_ID_ELEKTRO: '2' };
+  assert.deepEqual(credenciaisX(env, 'fernando'), { consumerKey: 'ck', consumerSecret: 'cs', token: 'tf', tokenSecret: 'sf', userId: '1' });
+  assert.deepEqual(credenciaisX(env, 'elektro'), { consumerKey: 'ck', consumerSecret: 'cs', token: 'te', tokenSecret: 'se', userId: '2' });
+  assert.equal(credenciaisX(env, 'kaffra'), null);
 });
