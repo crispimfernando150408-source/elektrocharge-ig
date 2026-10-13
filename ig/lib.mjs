@@ -74,12 +74,21 @@ export async function pollContainer({ graph, containerId, maxPolls = 20, interva
   throw new Error(`Container não terminou de processar depois de ${maxPolls} consultas (${containerId})`);
 }
 
+/** Segredos do Instagram por conta: elektro = nomes históricos; outras = sufixo _CONTA. */
+export function credenciaisIg(env, conta = 'elektro') {
+  const suf = conta === 'elektro' ? '' : `_${conta.toUpperCase()}`;
+  const accessToken = env[`IG_ACCESS_TOKEN${suf}`];
+  const userId = env[`IG_USER_ID${suf}`];
+  if (!accessToken || !userId) return null;
+  return { accessToken, userId };
+}
+
 // ---------- fila do dashboard (GET /api/conteudo/hoje) ----------
 
 // `post: null` -> nada pra hoje. Erro de rede ou 5xx -> quem chama decide o fallback
 // (o erro carrega `.status` quando veio do HTTP, undefined quando foi falha de rede).
-export async function buscarPostHoje({ apiBase, secret, fetchImpl = fetch }) {
-  const res = await fetchImpl(`${apiBase}/api/conteudo/hoje`, {
+export async function buscarPostHoje({ apiBase, secret, conta = 'elektro', fetchImpl = fetch }) {
+  const res = await fetchImpl(`${apiBase}/api/conteudo/hoje?rede=instagram&conta=${conta}`, {
     headers: { authorization: `Bearer ${secret}` },
   });
   const text = await res.text();
@@ -111,12 +120,12 @@ export async function reportarPublicado({ apiBase, secret, id, ig_media_id, erro
 // Decide a fonte da fila: API do dashboard se configurada; fallback pra pasta local
 // em erro de rede/5xx ou se as envs não existirem. Erro definitivo (4xx: secret errado,
 // etc.) não cai no fallback: estoura, porque é config quebrada, não indisponibilidade.
-export async function resolverPost({ apiBase, secret, fetchImpl = fetch, pickPostLocal, log = console.log }) {
+export async function resolverPost({ apiBase, secret, conta = 'elektro', fetchImpl = fetch, pickPostLocal, log = console.log }) {
   if (!apiBase || !secret) {
     return { origem: 'local', post: pickPostLocal() };
   }
   try {
-    const post = await buscarPostHoje({ apiBase, secret, fetchImpl });
+    const post = await buscarPostHoje({ apiBase, secret, conta, fetchImpl });
     return { origem: 'api', post };
   } catch (err) {
     if (err.status && err.status < 500) throw err;

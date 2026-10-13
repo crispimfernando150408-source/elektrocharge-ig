@@ -3,8 +3,10 @@
 // Se GH_PAT não existir, imprime o novo token pra você colar no Secret manualmente.
 import { execFileSync } from 'node:child_process';
 
-const tok = process.env.IG_ACCESS_TOKEN;
-if (!tok) { console.error('Sem IG_ACCESS_TOKEN'); process.exit(1); }
+const CONTA = process.env.IG_CONTA || 'elektro';
+const SECRET = CONTA === 'elektro' ? 'IG_ACCESS_TOKEN' : `IG_ACCESS_TOKEN_${CONTA.toUpperCase()}`;
+const tok = process.env[SECRET];
+if (!tok) { console.log(`Conta ${CONTA} sem ${SECRET} configurado. Pulo.`); process.exit(0); }
 
 const url = new URL('https://graph.instagram.com/refresh_access_token');
 url.searchParams.set('grant_type', 'ig_refresh_token');
@@ -15,10 +17,10 @@ console.log(`Token renovado (~${Math.round((j.expires_in||0)/86400)} dias).`);
 
 if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
   // grava no Secret via API do GitHub (gh CLI já vem no runner).
-  execFileSync('gh', ['secret', 'set', 'IG_ACCESS_TOKEN', '--body', j.access_token, '--repo', process.env.GITHUB_REPOSITORY],
+  execFileSync('gh', ['secret', 'set', SECRET, '--body', j.access_token, '--repo', process.env.GITHUB_REPOSITORY],
     { env: { ...process.env, GH_TOKEN: process.env.GH_PAT }, stdio: 'inherit' });
-  console.log('Secret IG_ACCESS_TOKEN atualizado automaticamente.');
+  console.log(`Secret ${SECRET} atualizado automaticamente.`);
 } else {
-  console.log('::warning::Sem GH_PAT — cole este token no Secret IG_ACCESS_TOKEN manualmente:');
+  console.log(`::warning::Sem GH_PAT — cole este token no Secret ${SECRET} manualmente:`);
   console.log(j.access_token);
 }

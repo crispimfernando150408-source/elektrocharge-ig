@@ -3,7 +3,7 @@
 // que importa (escolha da fonte, retry, reporte) mora em lib.mjs e é testada aqui direto.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buscarPostHoje, comRetry, criarGraph, paramsDoReel, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
+import { credenciaisIg, buscarPostHoje, comRetry, criarGraph, paramsDoReel, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
 
 function respostaJson(status, corpo) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(corpo), json: async () => corpo };
@@ -60,7 +60,7 @@ test('resolverPost usa o fallback local direto quando as envs não existem', asy
 test('buscarPostHoje devolve o post do corpo da resposta', async () => {
   const post = { id: 'abc', slug: 'seg', formato: 'reel', caption: 'x', imagens: [], video: null, schedule_at: '2026-09-13T19:00:00-03:00' };
   const fetchImpl = async (url, opts) => {
-    assert.equal(url, 'http://api/api/conteudo/hoje');
+    assert.equal(url, 'http://api/api/conteudo/hoje?rede=instagram&conta=elektro');
     assert.equal(opts.headers.authorization, 'Bearer segredo');
     return respostaJson(200, { post });
   };
@@ -209,4 +209,21 @@ test('paramsDoReel sem capa inclui thumb_offset e não tem cover_url', () => {
   assert.equal(params.share_to_feed, 'true');
   assert.equal(params.caption, 'legenda intacta do reel');
   assert.equal('cover_url' in params, false);
+});
+
+test('credenciaisIg: elektro usa os nomes sem sufixo; kaffra usa sufixo; faltando, null', () => {
+  const env = { IG_ACCESS_TOKEN: 'a', IG_USER_ID: '1', IG_ACCESS_TOKEN_KAFFRA: 'b', IG_USER_ID_KAFFRA: '2' };
+  assert.deepEqual(credenciaisIg(env, 'elektro'), { accessToken: 'a', userId: '1' });
+  assert.deepEqual(credenciaisIg(env, 'kaffra'), { accessToken: 'b', userId: '2' });
+  assert.equal(credenciaisIg({ IG_ACCESS_TOKEN: 'a', IG_USER_ID: '1' }, 'kaffra'), null);
+  assert.equal(credenciaisIg({ IG_ACCESS_TOKEN_KAFFRA: 'b' }, 'kaffra'), null);
+});
+
+test('buscarPostHoje pede a conta certa', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => { urls.push(url); return respostaJson(200, { post: null }); };
+  await buscarPostHoje({ apiBase: 'http://api', secret: 's', conta: 'kaffra', fetchImpl });
+  assert.match(urls[0], /\/api\/conteudo\/hoje\?rede=instagram&conta=kaffra$/);
+  await buscarPostHoje({ apiBase: 'http://api', secret: 's', fetchImpl });
+  assert.match(urls[1], /conta=elektro$/);
 });
