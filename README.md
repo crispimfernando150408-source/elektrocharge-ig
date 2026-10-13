@@ -61,7 +61,9 @@ que faria, sem publicar.
 ## Contas e segredos com sufixo
 Os publicadores atendem várias contas por **matriz de conta** nos workflows
 (`strategy.matrix.conta`, `fail-fast: false`, `concurrency` por conta). Conta sem
-segredo configurado é pulada com mensagem e código 0, sem tocar nas outras.
+segredo configurado: se for conta nova (Kaffra, ou Elektro no X e no LinkedIn), pula com
+mensagem; se for a conta de origem (Elektro no Instagram, Fernando no X e no LinkedIn),
+falha com código 1. Nos dois casos as outras contas da matriz seguem.
 O nome **sem sufixo** vale para a conta de origem (Instagram = elektro; X e LinkedIn
 = fernando); as demais usam `_ELEKTRO` ou `_KAFFRA`. Só nomes aqui, nunca valores.
 
@@ -85,5 +87,14 @@ ou menos). O refresh mensal do Instagram (`ig/refresh-token.mjs`) renova e regra
 Matrizes: `publish.yml` e `refresh-token.yml` com elektro e kaffra; `publish-x.yml`,
 `publish-li.yml` e `check-li-token.yml` com fernando, elektro e kaffra. Post de
 LinkedIn de página (elektro, kaffra) só sai por API quando houver os segredos da
-página (Community Management API); antes disso é publicado à mão pelo dashboard.
+página (Community Management API) **e** a Variable `LI_PAGINA_API_<CONTA>=1` (variável do
+repositório, não Secret); sem ela a perna pula e o post é publicado à mão pelo dashboard.
+Para ligar: (a) cadastrar token, URN e vencimento; (b) definir `LI_PAGINA_API_<CONTA>=1`
+aqui e `PUBLICADOR_LINKEDIN_<CONTA>=1` na Vercel na mesma hora, o que liga a API e
+desliga a rota manual.
+
+**Ordem dos segredos da Kaffra:** cadastre `IG_ACCESS_TOKEN_KAFFRA`, `IG_USER_ID_KAFFRA`
+e os `X_*`/`LI_*` de Elektro e Kaffra só depois do deploy do PR #358 do dashboard. Antes
+dele, `GET /api/conteudo/hoje` ignora `rede` e `conta`, e a perna da Kaffra publicaria o
+post da Elektro na conta errada.
 O dashboard enxerga só a variável espelho `PUBLICADOR_<REDE>_<CONTA>=1` na Vercel.
