@@ -21,6 +21,6 @@ if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
     { env: { ...process.env, GH_TOKEN: process.env.GH_PAT }, stdio: 'inherit' });
   console.log(`Secret ${SECRET} atualizado automaticamente.`);
 } else {
-  console.log(`::warning::Sem GH_PAT — cole este token no Secret ${SECRET} manualmente:`);
+  console.log(`::warning::Sem GH_PAT: cole este token no Secret ${SECRET} manualmente:`);
   console.log(j.access_token);
 }
