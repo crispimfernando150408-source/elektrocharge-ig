@@ -3,15 +3,19 @@ name: Publica X (perfil, espalhado no dia)
 
 on:
   schedule:
-    # Minutos quebrados (o GitHub descarta cron em hora cheia). 9h a 21h BRT = 12h a 0h UTC.
-    - cron: '7 12,14,16,18,20,22 * * *'
-    - cron: '37 13,15,17,19,21,23 * * *'
+    # Minutos quebrados (o GitHub descarta cron em hora cheia). 9h07 a 22h37 BRT = 12h a 1h UTC.
+    - cron: '7 12,14,16,18,20,22,0 * * *'
+    - cron: '37 13,15,17,19,21,23,1 * * *'
   workflow_dispatch:
     inputs:
       dry:
         description: 'true = só resolve e loga, não publica'
         required: false
         default: 'false'
+
+concurrency:
+  group: publish-x
+  cancel-in-progress: false
 
 jobs:
   publish:

@@ -3,13 +3,17 @@ name: Publica LinkedIn (perfil)
 
 on:
   schedule:
-    - cron: '23 11,15,19 * * *'   # 8h23, 12h23 e 16h23 BRT
+    - cron: '23 11,14,17,20,23 * * *'   # 8h23, 11h23, 14h23, 17h23 e 20h23 BRT
   workflow_dispatch:
     inputs:
       dry:
         description: 'true = só resolve e loga, não publica'
         required: false
         default: 'false'
+
+concurrency:
+  group: publish-li
+  cancel-in-progress: false
 
 jobs:
   publish:
