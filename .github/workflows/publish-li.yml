@@ -39,4 +39,6 @@ jobs:
           LI_AUTHOR_URN_ELEKTRO: ${{ secrets.LI_AUTHOR_URN_ELEKTRO }}
           LI_ACCESS_TOKEN_KAFFRA: ${{ secrets.LI_ACCESS_TOKEN_KAFFRA }}
           LI_AUTHOR_URN_KAFFRA: ${{ secrets.LI_AUTHOR_URN_KAFFRA }}
+          LI_PAGINA_API_ELEKTRO: ${{ vars.LI_PAGINA_API_ELEKTRO }}
+          LI_PAGINA_API_KAFFRA: ${{ vars.LI_PAGINA_API_KAFFRA }}
         run: node li/publish-ci.mjs ${{ github.event.inputs.dry == 'true' && '--dry' || '' }}

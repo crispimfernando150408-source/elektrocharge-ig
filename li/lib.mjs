@@ -15,6 +15,9 @@ export function credenciaisLi(env, conta = 'fernando') {
   const token = env[`LI_ACCESS_TOKEN${suf}`];
   const authorUrn = ehPessoa ? env.LI_PERSON_URN : env[`LI_AUTHOR_URN${suf}`];
   if (!token || !authorUrn) return null;
+  // Página só publica por API com a chave explícita LI_PAGINA_API_<CONTA>=1: cadastrar o token
+  // sozinho não liga nada, e o dono desliga a publicação manual na mesma hora (dashboard).
+  if (!ehPessoa && env[`LI_PAGINA_API${suf}`] !== '1') return null;
   return { token, authorUrn };
 }
 

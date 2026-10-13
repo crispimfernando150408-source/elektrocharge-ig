@@ -33,7 +33,7 @@ test('diasAteVencer conta dias inteiros', () => {
 });
 
 test('credenciaisLi: fernando é pessoa; elektro é organização; faltando, null', () => {
-  const env = { LI_ACCESS_TOKEN: 't', LI_PERSON_URN: 'urn:li:person:a', LI_ACCESS_TOKEN_ELEKTRO: 'te', LI_AUTHOR_URN_ELEKTRO: 'urn:li:organization:9' };
+  const env = { LI_ACCESS_TOKEN: 't', LI_PERSON_URN: 'urn:li:person:a', LI_ACCESS_TOKEN_ELEKTRO: 'te', LI_AUTHOR_URN_ELEKTRO: 'urn:li:organization:9', LI_PAGINA_API_ELEKTRO: '1' };
   assert.deepEqual(credenciaisLi(env, 'fernando'), { token: 't', authorUrn: 'urn:li:person:a' });
   assert.deepEqual(credenciaisLi(env, 'elektro'), { token: 'te', authorUrn: 'urn:li:organization:9' });
   assert.equal(credenciaisLi(env, 'kaffra'), null);
@@ -48,4 +48,8 @@ test('publicarUgc aceita autor organização', async () => {
 
 test('publicarUgc rejeita autor fora de pessoa ou organização', async () => {
   await assert.rejects(() => publicarUgc({ texto: 'oi', authorUrn: 'abc', token: 't', fetchImpl: async () => { throw new Error('não devia chamar'); } }), /authorUrn inválido/);
+});
+
+test('página com token mas sem LI_PAGINA_API_<CONTA>=1 não publica por API', () => {
+  assert.equal(credenciaisLi({ LI_ACCESS_TOKEN_KAFFRA: 'tk', LI_AUTHOR_URN_KAFFRA: 'urn:li:organization:5' }, 'kaffra'), null);
 });
