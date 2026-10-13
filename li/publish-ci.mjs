@@ -33,9 +33,9 @@ try {
   await reportar({ erro: e.message }).catch((r) => console.error('aviso: falha ao reportar erro:', r.message));
   process.exit(1);
 }
-// Já está no ar: nunca marcar `falhou`. Se o reporte não passar, o dono marca na aba Conteúdo.
+// Já está no ar: nunca marcar `falhou`. Se o reporte não passar, o dono reporta à mão pela rota /publicado (curl no piloto-perfil.md).
 try { await tentar(() => reportar({ publicado_id: id })); }
 catch (e) {
-  console.error(`::error::Publicado como ${id} mas a fila não foi atualizada; marque o post ${post.id} como publicado na aba Conteúdo (${e.message})`);
+  console.error(`::error::Publicado como ${id} mas a fila não foi atualizada; reporte à mão: POST $CONTEUDO_API_BASE/api/conteudo/posts/${post.id}/publicado com {"publicado_id":"..."} (ver docs/conteudo/piloto-perfil.md no dashboard) (${e.message})`);
   process.exit(1);
 }

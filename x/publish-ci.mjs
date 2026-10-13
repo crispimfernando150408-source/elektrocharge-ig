@@ -37,7 +37,7 @@ if (igual) {
   if (DRY) { console.log(`--dry: já está no X (tweet ${igual.id}), reportaria. Não publico nem reporto.`); process.exit(0); }
   console.log(`Já está no X (tweet ${igual.id}). Reporto e saio.`);
   try { await tentar(() => reportar({ publicado_id: igual.id })); }
-  catch (e) { console.error(`::error::Tweet ${igual.id} já está no ar mas a fila não foi atualizada (${e.message}); marque o post ${post.id} como publicado na aba Conteúdo`); process.exit(1); }
+  catch (e) { console.error(`::error::Tweet ${igual.id} já está no ar mas a fila não foi atualizada (${e.message}); reporte à mão: POST $CONTEUDO_API_BASE/api/conteudo/posts/${post.id}/publicado com {"publicado_id":"..."} (ver docs/conteudo/piloto-perfil.md no dashboard)`); process.exit(1); }
   process.exit(0);
 }
 
@@ -55,6 +55,6 @@ try {
 }
 try { await tentar(() => reportar({ publicado_id: id })); }
 catch (e) {
-  console.error(`::error::Publicado como ${id} mas a fila não foi atualizada; marque o post ${post.id} como publicado na aba Conteúdo (${e.message})`);
+  console.error(`::error::Publicado como ${id} mas a fila não foi atualizada; reporte à mão: POST $CONTEUDO_API_BASE/api/conteudo/posts/${post.id}/publicado com {"publicado_id":"..."} (ver docs/conteudo/piloto-perfil.md no dashboard) (${e.message})`);
   process.exit(1);
 }
