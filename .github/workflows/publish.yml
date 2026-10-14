@@ -23,15 +23,25 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        conta: [elektro, kaffra]
+    concurrency:
+      group: publish-ig-${{ matrix.conta }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Publicar post do dia
+      - name: Publicar post do dia (${{ matrix.conta }})
         env:
+          IG_CONTA: ${{ matrix.conta }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN_KAFFRA: ${{ secrets.IG_ACCESS_TOKEN_KAFFRA }}
+          IG_USER_ID_KAFFRA: ${{ secrets.IG_USER_ID_KAFFRA }}
           CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
           CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
         run: node ig/publish-ci.mjs ${{ github.event.inputs.post }}

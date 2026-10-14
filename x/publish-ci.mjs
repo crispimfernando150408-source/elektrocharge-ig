@@ -1,30 +1,36 @@
 // x/publish-ci.mjs
-// Publica no X o post do dia da conta do Fernando (rede=x, conta=fernando) que já
+// Publica no X o post do dia da conta X_CONTA (rede=x, padrão fernando) que já
 // passou da hora. Roda várias vezes por dia no Actions; a idempotência por texto
 // garante que só uma execução publica. Nunca publica sem a fila dizer que pode.
 // Uso: node x/publish-ci.mjs [--dry]
 import { comRetry } from '../ig/lib.mjs';
-import { buscarPostHojeRede, comoTransiente, mesmoTexto, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
+import { buscarPostHojeRede, credenciaisX, comoTransiente, mesmoTexto, publicarTweet, reportarPublicadoRede, tweetsRecentes } from './lib.mjs';
 
 const tentar = (fn) => comRetry(comoTransiente(fn));
 
 const DRY = process.argv.includes('--dry');
-const { CONTEUDO_API_BASE, CONTEUDO_SECRET, X_CONSUMER_KEY, X_CONSUMER_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET, X_USER_ID, X_BEARER_TOKEN } = process.env;
-for (const [k, v] of Object.entries({ CONTEUDO_API_BASE, CONTEUDO_SECRET, X_CONSUMER_KEY, X_CONSUMER_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET, X_USER_ID, X_BEARER_TOKEN })) {
+const { CONTEUDO_API_BASE, CONTEUDO_SECRET, X_BEARER_TOKEN } = process.env;
+const CONTA = process.env.X_CONTA || 'fernando';
+const cred = credenciaisX(process.env, CONTA);
+if (!cred) {
+  if (CONTA === 'fernando') { console.error('Faltam Secrets X_CONSUMER_KEY / X_CONSUMER_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET / X_USER_ID'); process.exit(1); }
+  console.log(`Conta ${CONTA} sem segredo do X configurado. Pulo.`); process.exit(0);
+}
+for (const [k, v] of Object.entries({ CONTEUDO_API_BASE, CONTEUDO_SECRET, X_BEARER_TOKEN })) {
   if (!v) { console.error(`Falta a env ${k}`); process.exit(1); }
 }
 
 const brtHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }).format(new Date()));
 if (!DRY && (brtHour < 8 || brtHour > 22)) { console.log(`${brtHour}h BRT, fora da janela 8 a 22h. Nada a fazer.`); process.exit(0); }
 
-const post = await tentar(() => buscarPostHojeRede({ apiBase: CONTEUDO_API_BASE, secret: CONTEUDO_SECRET, rede: 'x', conta: 'fernando' }));
+const post = await tentar(() => buscarPostHojeRede({ apiBase: CONTEUDO_API_BASE, secret: CONTEUDO_SECRET, rede: 'x', conta: CONTA }));
 if (!post) { console.log('Nada para publicar no X agora.'); process.exit(0); }
 console.log(`Post ${post.id} (${post.slug}): ${post.caption.length} caracteres`);
 
-const credenciais = { consumerKey: X_CONSUMER_KEY, consumerSecret: X_CONSUMER_SECRET, token: X_ACCESS_TOKEN, tokenSecret: X_ACCESS_TOKEN_SECRET };
+const { userId, ...credenciais } = cred;
 
 let recentes;
-try { recentes = await tentar(() => tweetsRecentes({ userId: X_USER_ID, bearer: X_BEARER_TOKEN })); }
+try { recentes = await tentar(() => tweetsRecentes({ userId, bearer: X_BEARER_TOKEN })); }
 catch (e) {
   // Sem a lista não dá para saber se já está no ar: não publica; o próximo cron tenta de novo.
   console.error('Não deu para checar duplicado, não publico nesta execução:', e.message);

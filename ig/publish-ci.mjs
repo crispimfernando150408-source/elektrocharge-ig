@@ -8,14 +8,12 @@
 // Uso: node ig/publish-ci.mjs [caminho-do-post.json] [--dry]
 //   sem arg = escolhe pelo dia · --dry = resolve e loga, mas não publica nem cria container.
 import { readFileSync } from 'node:fs';
-import { criarGraph, formatarErro, paramsDoReel, pickPostLocal, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
+import { credenciaisIg, criarGraph, formatarErro, paramsDoReel, pickPostLocal, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
 
 const DRY = process.argv.includes('--dry');
 const argPost = process.argv.slice(2).find((a) => !a.startsWith('--')) || null;
 
 const {
-  IG_ACCESS_TOKEN,
-  IG_USER_ID,
   GITHUB_REPOSITORY,
   GITHUB_REF_NAME,
   CONTEUDO_API_BASE,
@@ -23,7 +21,15 @@ const {
   IG_POLL_TIMEOUT_MS,
 } = process.env;
 const BRANCH = GITHUB_REF_NAME || 'main';
-if (!IG_ACCESS_TOKEN || !IG_USER_ID) { console.error('Faltam Secrets IG_ACCESS_TOKEN / IG_USER_ID'); process.exit(1); }
+const CONTA = process.env.IG_CONTA || 'elektro';
+const cred = credenciaisIg(process.env, CONTA);
+// Conta de origem (elektro) sem segredo é erro, como sempre foi; conta nova sem segredo só pula.
+if (!cred) {
+  if (CONTA === 'elektro') { console.error('Faltam Secrets IG_ACCESS_TOKEN / IG_USER_ID'); process.exit(1); }
+  console.log(`Conta ${CONTA} sem segredo do Instagram configurado. Pulo.`); process.exit(0);
+}
+if (argPost && CONTA !== 'elektro') { console.log(`Post local (${argPost}) só vale para a conta elektro. Pulo a perna ${CONTA}.`); process.exit(0); }
+const IG_USER_ID = cred.userId;
 
 const manual = !!argPost || DRY; // disparo manual ou --dry ignora as guardas de horário
 
@@ -44,7 +50,9 @@ const IG_POLL_TIMEOUT = Number(IG_POLL_TIMEOUT_MS) || 10 * 60 * 1000;
 const { origem, post: fonte } = await resolverPost({
   apiBase: CONTEUDO_API_BASE,
   secret: CONTEUDO_SECRET,
-  pickPostLocal: () => pickPostLocal({ todayBR, arg: argPost }),
+  conta: CONTA,
+  // fila local (pasta posts/) só existe para a conta elektro
+  pickPostLocal: () => (CONTA === 'elektro' ? pickPostLocal({ todayBR, arg: argPost }) : null),
 });
 
 // normaliza os dois formatos (API x arquivo local) num único shape
@@ -89,7 +97,7 @@ if (videoUrl) {
   else console.log('capa do reel: sem imagem, usando o primeiro quadro (thumb_offset=0)');
 }
 
-const graph = criarGraph({ accessToken: IG_ACCESS_TOKEN });
+const graph = criarGraph({ accessToken: cred.accessToken });
 
 async function reportarSeApi(campos) {
   if (origem !== 'api') return;
