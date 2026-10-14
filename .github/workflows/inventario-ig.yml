@@ -1,0 +1,28 @@
+name: Inventário do Instagram (só leitura)
+
+on:
+  workflow_dispatch:
+    inputs:
+      conta:
+        description: 'elektro ou kaffra'
+        required: false
+        default: 'elektro'
+
+jobs:
+  inventario:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Puxar posts, insights e capas
+        env:
+          IG_ACCESS_TOKEN: ${{ inputs.conta == 'kaffra' && secrets.IG_ACCESS_TOKEN_KAFFRA || secrets.IG_ACCESS_TOKEN }}
+          INVENTARIO_DIR: inventario
+        run: node ig/inventario.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inventario-${{ inputs.conta }}
+          path: inventario/
+          retention-days: 7
