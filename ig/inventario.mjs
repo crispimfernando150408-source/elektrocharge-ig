@@ -35,7 +35,7 @@ do {
 mkdirSync(join(PASTA, 'capas'), { recursive: true });
 for (const p of posts) {
   try {
-    const ins = await graph(`${p.id}/insights`, { metric: p.media_type === 'VIDEO' ? 'reach,saved,shares,plays' : 'reach,saved,shares' });
+    const ins = await graph(`${p.id}/insights`, { metric: p.media_type === 'VIDEO' ? 'reach,saved,shares,views' : 'reach,saved,shares' });
     p.insights = Object.fromEntries((ins.data ?? []).map((m) => [m.name, m.values?.[0]?.value ?? null]));
   } catch (e) { p.insights = { erro: String(e.message).slice(0, 120) }; }
   const url = p.thumbnail_url ?? p.media_url;
