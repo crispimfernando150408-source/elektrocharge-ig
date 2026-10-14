@@ -1,0 +1,40 @@
+# .github/workflows/publish-x.yml
+name: Publica X (perfil, espalhado no dia)
+
+on:
+  schedule:
+    # Minutos quebrados (o GitHub descarta cron em hora cheia). 9h07 a 22h37 BRT = 12h a 1h UTC.
+    - cron: '7 12,14,16,18,20,22,0 * * *'
+    - cron: '37 13,15,17,19,21,23,1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'true = só resolve e loga, não publica'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: publish-x
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Testes do publicador
+        run: node --test x/lib.test.mjs
+      - name: Publicar post do X
+        env:
+          CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
+          CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          X_USER_ID: ${{ secrets.X_USER_ID }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+        run: node x/publish-ci.mjs ${{ github.event.inputs.dry == 'true' && '--dry' || '' }}

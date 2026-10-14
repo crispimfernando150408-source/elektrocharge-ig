@@ -1,0 +1,34 @@
+# .github/workflows/publish-li.yml
+name: Publica LinkedIn (perfil)
+
+on:
+  schedule:
+    - cron: '23 11,14,17,20,23 * * *'   # 8h23, 11h23, 14h23, 17h23 e 20h23 BRT
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'true = só resolve e loga, não publica'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: publish-li
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Testes do publicador
+        run: node --test li/lib.test.mjs
+      - name: Publicar post do LinkedIn
+        env:
+          CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
+          CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
+          LI_ACCESS_TOKEN: ${{ secrets.LI_ACCESS_TOKEN }}
+          LI_PERSON_URN: ${{ secrets.LI_PERSON_URN }}
+        run: node li/publish-ci.mjs ${{ github.event.inputs.dry == 'true' && '--dry' || '' }}
