@@ -13,8 +13,9 @@ const { CONTEUDO_API_BASE, CONTEUDO_SECRET, X_BEARER_TOKEN } = process.env;
 const CONTA = process.env.X_CONTA || 'fernando';
 const cred = credenciaisX(process.env, CONTA);
 if (!cred) {
-  if (CONTA === 'fernando') { console.error('Faltam Secrets X_CONSUMER_KEY / X_CONSUMER_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET / X_USER_ID'); process.exit(1); }
-  console.log(`Conta ${CONTA} sem segredo do X configurado. Pulo.`); process.exit(0);
+  // Sem segredo do X a rodada pula, para qualquer conta. Antes a conta fernando
+  // saía com erro e o Actions mandava 14 e-mails de falha por dia (dono, 17/10).
+  console.log(`Conta ${CONTA} sem segredo do X configurado (X_CONSUMER_KEY, X_CONSUMER_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET, X_USER_ID). Pulo.`); process.exit(0);
 }
 for (const [k, v] of Object.entries({ CONTEUDO_API_BASE, CONTEUDO_SECRET, X_BEARER_TOKEN })) {
   if (!v) { console.error(`Falta a env ${k}`); process.exit(1); }
