@@ -24,6 +24,8 @@ if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
     { env: { ...process.env, GH_TOKEN: process.env.GH_PAT }, stdio: 'inherit' });
   console.log(`Secret ${SECRET} atualizado automaticamente.`);
 } else {
-  console.log(`::warning::Sem GH_PAT: cole este token no Secret ${SECRET} manualmente:`);
-  console.log(j.access_token);
+  // Nunca imprimir o token: log de Actions de repositório público é público. Sem GH_PAT o job
+  // falha alto para o dono configurar o GH_PAT, em vez de jogar o token na tela.
+  console.log(`::error::Sem GH_PAT: token renovado NÃO foi gravado em ${SECRET}. Configure o secret GH_PAT (escopo de secrets do repo) e rode de novo.`);
+  process.exit(1);
 }
