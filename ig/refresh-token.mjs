@@ -11,21 +11,32 @@ if (!tok) {
   console.log(`Conta ${CONTA} sem ${SECRET} configurado. Pulo.`); process.exit(0);
 }
 
+// Sem GH_PAT não há onde gravar o token novo: falha antes de renovar, sem nunca imprimir o token.
+const repo = process.env.GITHUB_REPOSITORY;
+if (!process.env.GH_PAT || !repo) {
+  console.log(`::error::Sem GH_PAT: token NÃO foi renovado nem gravado em ${SECRET}. Configure o secret GH_PAT (escopo de secrets do repo) e rode de novo.`);
+  process.exit(1);
+}
+
 const url = new URL('https://graph.instagram.com/refresh_access_token');
 url.searchParams.set('grant_type', 'ig_refresh_token');
 url.searchParams.set('access_token', tok);
 const j = await (await fetch(url)).json();
 if (!j.access_token) throw new Error('Falha no refresh: ' + JSON.stringify(j));
+// Mascara o token novo no log do Actions antes de qualquer outra saída.
+console.log('::add-mask::' + j.access_token);
 console.log(`Token renovado (~${Math.round((j.expires_in||0)/86400)} dias).`);
 
-if (process.env.GH_PAT && process.env.GITHUB_REPOSITORY) {
-  // grava no Secret via API do GitHub (gh CLI já vem no runner).
-  execFileSync('gh', ['secret', 'set', SECRET, '--body', j.access_token, '--repo', process.env.GITHUB_REPOSITORY],
-    { env: { ...process.env, GH_TOKEN: process.env.GH_PAT }, stdio: 'inherit' });
-  console.log(`Secret ${SECRET} atualizado automaticamente.`);
-} else {
-  // Nunca imprimir o token: log de Actions de repositório público é público. Sem GH_PAT o job
-  // falha alto para o dono configurar o GH_PAT, em vez de jogar o token na tela.
-  console.log(`::error::Sem GH_PAT: token renovado NÃO foi gravado em ${SECRET}. Configure o secret GH_PAT (escopo de secrets do repo) e rode de novo.`);
+// Grava no Secret via API do GitHub (gh CLI já vem no runner). O token vai pela entrada
+// padrão, nunca na linha de comando, para não aparecer em mensagem de erro.
+try {
+  execFileSync('gh', ['secret', 'set', SECRET, '--repo', repo], {
+    input: j.access_token,
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env: { ...process.env, GH_TOKEN: process.env.GH_PAT },
+  });
+} catch (e) {
+  console.log(`::error::gh secret set falhou (status ${e.status ?? 'desconhecido'}): ${SECRET} NÃO foi atualizado.`);
   process.exit(1);
 }
+console.log(`Secret ${SECRET} atualizado automaticamente.`);
