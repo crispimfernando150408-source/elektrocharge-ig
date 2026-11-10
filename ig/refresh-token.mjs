@@ -1,6 +1,6 @@
 // Renova o token longo do Instagram (vale 60 dias) e grava de volta no Secret IG_ACCESS_TOKEN.
 // Roda mensalmente no Actions. Precisa do Secret GH_PAT (PAT com permissão de escrever secrets).
-// Se GH_PAT não existir, imprime o novo token pra você colar no Secret manualmente.
+// Se GH_PAT não existir, o job falha com erro e NUNCA imprime o token (log de Actions é público).
 import { execFileSync } from 'node:child_process';
 
 const CONTA = process.env.IG_CONTA || 'elektro';
