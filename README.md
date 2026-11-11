@@ -4,26 +4,38 @@ Publica os carrosséis da ElektroCharge no Instagram por **GitHub Actions** (cro
 nuvem). Não depende do Mac ligado. Grátis, sem cota (API direta do Instagram).
 
 ## Como funciona
-- **`.github/workflows/publish.yml`** roda todo dia às **22:00 UTC = 19:00 BRT**.
-- **`ig/publish-ci.mjs`** pergunta ao dashboard qual é o post de hoje (ver "Fila no
-  dashboard" abaixo) e publica. Se não houver post pra hoje, não faz nada.
+- **`.github/workflows/publish.yml`** roda de hora em hora, das **08:17 às 22:17 BRT**
+  (minuto quebrado; o GitHub atrasa cron em hora cheia). Guarda de janela: só publica
+  de 8h a 23h BRT (cron atrasado de madrugada não publica).
+- **`ig/publish-ci.mjs`** pergunta ao dashboard a lista do que pode sair agora (ver "Fila
+  no dashboard" abaixo) e publica todos, em ordem de horário, com 60 s entre um e outro.
+  Se a lista vier vazia, não faz nada.
 - **`refresh-token.yml`** renova o token (60 dias) todo dia 1.
 
 ## Fila no dashboard
 A fila deixou de morar numa pasta commitada: agora mora no dashboard (aba
 Conteúdo), com aprovação e faixa (`auto`/`aprovar`/`bloqueado`) por post.
 
-- `ig/publish-ci.mjs` chama `GET <CONTEUDO_API_BASE>/api/conteudo/hoje` com
-  `Authorization: Bearer <CONTEUDO_SECRET>`. `post: null` → nada pra hoje, sai 0.
+- `ig/publish-ci.mjs` chama `GET <CONTEUDO_API_BASE>/api/conteudo/hoje?rede=instagram&conta=<conta>&lista=1`
+  com `Authorization: Bearer <CONTEUDO_SECRET>` e recebe `posts`: todos os posts
+  **`aprovado`** (só a aprovação do dono; a faixa `auto` não entra) do dia BRT cujo
+  `schedule_at` já chegou. Lista vazia → nada agora, sai 0. Resposta sem `posts`
+  (dashboard sem `?lista=1`) é erro: sai 1 sem publicar e sem cair no fallback. O
+  publicador confere de novo `status: aprovado` e o horário antes de publicar.
   `imagens`/`video` já vêm como URLs públicas (Supabase Storage), não passam por
   `raw.githubusercontent`/jsDelivr. A capa do reel vem de `imagens[0]` do post.
 - Depois de tentar publicar, reporta pra `POST <base>/api/conteudo/posts/<id>/publicado`
   (mesmo Bearer): `{ ig_media_id }` no sucesso, `{ erro }` na falha (nunca os dois).
-  Se o dedupe por legenda encontrar o post já publicado, reporta `publicado` com o
-  `ig_media_id` existente em vez de tentar de novo.
+  O dashboard troca o status e o post sai da lista: é isso que impede o run da hora
+  seguinte de publicar de novo. Se o reporte se perder, o dedupe por legenda (últimas
+  25 mídias do feed) acha o post já publicado e reporta `publicado` com o `ig_media_id`
+  existente em vez de tentar de novo. Se a checagem do feed falhar, o run para sem
+  publicar. Se um post falhar ao publicar, ele vira `falhou` (não volta sozinho) e o run
+  para; os seguintes ficam para o run da hora seguinte. Um run por conta por vez
+  (`concurrency`), até 120 min cada.
 - **Fallback**: se a API estiver fora do ar (erro de rede ou 5xx) ou as envs
   `CONTEUDO_API_BASE`/`CONTEUDO_SECRET` não existirem, cai no comportamento antigo:
-  acha o post cujo `scheduleAt` é hoje em `posts/<semana>/post-*.json` (imagens por
+  acha o post cujo `scheduleAt` é hoje, com horário já chegado, em `posts/<semana>/post-*.json` (imagens por
   `raw.githubusercontent`, com reserva em jsDelivr). Um log claro avisa quando isso
   acontece. Erro 4xx (secret errado etc.) **não** cai no fallback, é config quebrada,
   não indisponibilidade, e estoura na hora.
@@ -49,14 +61,19 @@ Conteúdo), com aprovação e faixa (`auto`/`aprovar`/`bloqueado`) por post.
 1. Gere os carrosséis (pipeline local) → PNG 1080×1350.
 2. Converta pra JPEG e coloque em `posts/<semana>/img/<slug>/NN.jpg`.
 3. Crie `posts/<semana>/post-<slug>.json` com `{caption, images[relativos], scheduleAt}`
-   (datas futuras, 19:00).
+   (datas futuras, `HH:MM` entre 08:00 e 22:00).
 4. `git add . && git commit && git push`. Só é usado se a API do dashboard estiver fora
    do ar, ou passando o caminho manualmente (`workflow_dispatch` → campo `post`).
 
 ## Testar agora
-Actions → "Publica IG 19h" → **Run workflow** → (opcional) informe um post específico
-(fallback local). Localmente: `node ig/publish-ci.mjs --dry` resolve a fila e loga o
-que faria, sem publicar.
+Actions → "Publica IG (de hora em hora)" → **Run workflow** → (opcional) informe um post
+específico (fallback local). Localmente, sem publicar nem reportar:
+`IG_ACCESS_TOKEN=x IG_USER_ID=x IG_FAKE_HOUR=19:17 node ig/publish-ci.mjs --dry --date 2026-10-29`.
+`--date` e `IG_FAKE_HOUR` (`19` ou `19:30`) só valem com `--dry` e só mudam o fallback local
+e a guarda de janela; a lista da API é sempre a de agora no dashboard. Testes: `node --test`.
+
+Limite da Meta: 50 posts publicados pela API por conta em 24 h (carrossel conta como 1;
+a doc de publicação cita 100 numa seção e 50 em outra, vale o menor).
 
 ## Contas e segredos com sufixo
 Os publicadores atendem várias contas por **matriz de conta** nos workflows
@@ -92,6 +109,12 @@ repositório, não Secret); sem ela a perna pula e o post é publicado à mão p
 Para ligar: (a) cadastrar token, URN e vencimento; (b) definir `LI_PAGINA_API_<CONTA>=1`
 aqui e `PUBLICADOR_LINKEDIN_<CONTA>=1` na Vercel na mesma hora, o que liga a API e
 desliga a rota manual.
+
+**Instagram da Kaffra: não ligar aqui.** A Kaffra publica no Instagram pelo repositório
+`kaffra-ig` (fila em pasta). Se `IG_ACCESS_TOKEN_KAFFRA` e `IG_USER_ID_KAFFRA` existirem
+aqui, a perna `kaffra` deste `publish.yml` publica toda hora os posts `aprovado` da conta
+kaffra no dashboard, e duas filas publicariam na mesma conta. Proposta em aberto (decisão do
+dono): tirar `kaffra` da matriz do `publish.yml`.
 
 **Ordem dos segredos da Kaffra:** cadastre `IG_ACCESS_TOKEN_KAFFRA`, `IG_USER_ID_KAFFRA`
 e os `X_*`/`LI_*` de Elektro e Kaffra só depois do deploy do PR #358 do dashboard. Antes
