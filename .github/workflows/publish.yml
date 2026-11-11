@@ -6,7 +6,8 @@ on:
     # O GitHub atrasa/descarta crons em hora cheia, por isso o minuto quebrado. Cada run publica
     # TODOS os posts aprovados do dia cujo schedule_at já chegou (GET /api/conteudo/hoje?lista=1)
     # e reporta cada um ao dashboard, que o tira da lista. Se um cron falhar, o da hora seguinte
-    # pega o que ficou. Guarda de janela (8–23h BRT) impede post de madrugada.
+    # pega o que ficou; o das 22:47 repesca o das 22:17. Guarda de janela (8–23h BRT) impede
+    # post de madrugada.
     - cron: '17 11 * * *'   # 08:17 BRT
     - cron: '17 12 * * *'   # 09:17 BRT
     - cron: '17 13 * * *'   # 10:17 BRT
@@ -22,6 +23,7 @@ on:
     - cron: '17 23 * * *'   # 20:17 BRT
     - cron: '17 0 * * *'    # 21:17 BRT
     - cron: '17 1 * * *'    # 22:17 BRT
+    - cron: '47 1 * * *'    # 22:47 BRT: repescagem do último run (o GitHub às vezes descarta um cron)
   workflow_dispatch:      # permite disparo manual pra testar
     inputs:
       post:

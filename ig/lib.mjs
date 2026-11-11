@@ -125,20 +125,21 @@ export async function reportarPublicado({ apiBase, secret, id, ig_media_id, erro
   return res.json();
 }
 
-// Decide a fonte da fila: API do dashboard se configurada; fallback pra pasta local
-// em erro de rede/5xx ou se as envs não existirem. Erro definitivo (4xx: secret errado,
-// etc.) ou resposta fora do contrato não cai no fallback: estoura, porque é config quebrada,
-// não indisponibilidade. Devolve sempre uma lista (`pickPostLocal` devolve um caminho ou null).
-export async function resolverPosts({ apiBase, secret, conta = 'elektro', fetchImpl = fetch, pickPostLocal, log = console.log }) {
-  const local = () => { const p = pickPostLocal(); return { origem: 'local', posts: p ? [p] : [] }; };
-  if (!apiBase || !secret) return local();
+// Decide a fonte da fila. Caminho manual (arg) ou API não configurada: pasta local
+// (`pickPostLocal` devolve a lista de caminhos). API configurada: só a API. Se ela estiver fora
+// do ar (rede/5xx), NÃO cai na pasta local: a pasta não passa pela aprovação do dono no
+// dashboard e uma legenda editada lá escaparia da checagem de duplicata; o run sai com erro e o
+// da hora seguinte tenta de novo. 4xx e resposta fora do contrato também estouram.
+export async function resolverPosts({ apiBase, secret, conta = 'elektro', arg = null, fetchImpl = fetch, pickPostLocal, log = console.log }) {
+  if (arg || !apiBase || !secret) {
+    if (!arg) log('Sem CONTEUDO_API_BASE/CONTEUDO_SECRET: uso a fila local (posts/).');
+    return { origem: 'local', posts: pickPostLocal() };
+  }
   try {
-    const posts = await buscarPostsHoje({ apiBase, secret, conta, fetchImpl });
-    return { origem: 'api', posts };
+    return { origem: 'api', posts: await buscarPostsHoje({ apiBase, secret, conta, fetchImpl }) };
   } catch (err) {
-    if (err.contrato || (err.status && err.status < 500)) throw err;
-    log(`API do dashboard indisponível (${formatarErro(err)}), caindo no fallback local.`);
-    return local();
+    if (!err.contrato && !(err.status && err.status < 500)) err.indisponivel = true;
+    throw err;
   }
 }
 
@@ -146,8 +147,10 @@ export async function resolverPosts({ apiBase, secret, conta = 'elektro', fetchI
 // (comparado como instante). O dashboard já filtra; se um dia mudar, o publicador não segue.
 export function filtrarProntos(posts, agoraMs, log = console.log) {
   return posts.filter((p) => {
-    const quando = Date.parse(p.schedule_at);
     if (p.status !== 'aprovado') { log(`aviso: ${p.id} veio com status ${p.status}, não aprovado pelo dono. Pulo.`); return false; }
+    // Sem fuso explícito, Date.parse leria a hora no fuso do runner (UTC): 3 h adiantado.
+    if (!/(Z|[+-]\d\d:?\d\d)$/.test(p.schedule_at || '')) { log(`aviso: ${p.id} com schedule_at sem fuso (${p.schedule_at}). Pulo.`); return false; }
+    const quando = Date.parse(p.schedule_at);
     if (Number.isNaN(quando) || quando > agoraMs) { log(`aviso: ${p.id} agendado para ${p.schedule_at}, ainda não chegou. Pulo.`); return false; }
     return true;
   });
@@ -156,6 +159,7 @@ export function filtrarProntos(posts, agoraMs, log = console.log) {
 // Lista da API -> posts no formato do laço de publicação (já filtrados por filtrarProntos).
 export function paraPublicar(postsDaApi, agoraMs, log = console.log) {
   return filtrarProntos(postsDaApi, agoraMs, log)
+    .sort((a, b) => Date.parse(a.schedule_at) - Date.parse(b.schedule_at))
     .map((p) => ({ id: p.id, caption: p.caption, images: p.imagens, video: p.video, schedule_at: p.schedule_at }));
 }
 
@@ -230,7 +234,7 @@ export async function publicarLista({ posts, graph, igUserId, dry = false, publi
     }
 
     if (mediaIdExistente) {
-      log(`Já está no feed (mesma legenda): ${nome}. Pulo pra não duplicar.`);
+      logErro(`Já está no feed uma mídia com a mesma legenda (${mediaIdExistente}): ${nome}. Pulo pra não duplicar e reporto como publicado. Se for outro post com legenda repetida, ele não sai.`);
       if (!dry) await reportar(post, { ig_media_id: mediaIdExistente });
       pulados.push(nome);
       continue;
@@ -261,22 +265,25 @@ export async function publicarLista({ posts, graph, igUserId, dry = false, publi
 
 // ---------- fila local (fallback / histórico) ----------
 
-// Varre posts/*/post-*.json e acha o primeiro cujo scheduleAt é de hoje (BR) e cujo horário
-// ("HH:MM", em BRT) já chegou: com o cron de hora em hora, o post das 19h não sai às 8h. Sem
-// agoraBR, só pelo dia. arg explícito (caminho do post) tem prioridade, igual ao comportamento
-// manual de sempre.
+// Varre posts/*/post-*.json e devolve TODOS os de hoje (BR) cujo horário ("HH:MM", em BRT) já
+// chegou, em ordem de horário: com o cron de hora em hora, o post das 19h não sai às 8h. Sem
+// agoraBR, só pelo dia. arg explícito (caminho do post) tem prioridade e volta sozinho na lista,
+// igual ao comportamento manual de sempre.
 export function pickPostLocal({ todayBR, agoraBR, arg, postsDir = 'posts', readdirSyncFn = readdirSync, readFileSyncFn = readFileSync, joinFn = join }) {
-  if (arg) return arg;
+  if (arg) return [arg];
+  const doDia = [];
   for (const week of readdirSyncFn(postsDir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
     const dir = joinFn(postsDir, week.name);
     for (const f of readdirSyncFn(dir).filter((f) => /^post-.*\.json$/.test(f))) {
       const schedule = JSON.parse(readFileSyncFn(joinFn(dir, f), 'utf8')).scheduleAt || '';
       if (schedule.slice(0, 10) !== todayBR) continue;
-      if (agoraBR != null && !(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(schedule) && schedule.slice(11, 16) <= agoraBR)) continue;
-      return joinFn(dir, f);
+      const temHora = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(schedule);
+      if (agoraBR != null && !(temHora && schedule.slice(11, 16) <= agoraBR)) continue;
+      doDia.push({ caminho: joinFn(dir, f), horaMin: temHora ? schedule.slice(11, 16) : '' });
     }
   }
-  return null;
+  doDia.sort((a, b) => (a.horaMin < b.horaMin ? -1 : a.horaMin > b.horaMin ? 1 : (a.caminho < b.caminho ? -1 : 1)));
+  return doDia.map((x) => x.caminho);
 }
 
 // Parâmetros do container de reel. Com capa, manda cover_url (imagens[0] do post).

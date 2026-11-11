@@ -36,20 +36,26 @@ test('resolverPosts NÃO aceita resposta sem `posts` (dashboard antigo): nem mod
   );
 });
 
-test('resolverPosts cai no fallback local em erro de rede', async () => {
+test('resolverPosts com a API configurada e fora do ar (rede): NÃO cai na pasta local, estoura como indisponível', async () => {
   const fetchImpl = async () => { throw new Error('fetch failed'); };
-  const logs = [];
-  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, log: (m) => logs.push(m), pickPostLocal: () => 'posts/semana1/post-x.json' });
-  assert.equal(origem, 'local');
-  assert.deepEqual(posts, ['posts/semana1/post-x.json']);
-  assert.match(logs[0], /indisponível/);
+  await assert.rejects(
+    () => resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair na pasta'); } }),
+    (err) => { assert.equal(err.indisponivel, true); return true; }
+  );
 });
 
-test('resolverPosts cai no fallback local em 5xx do dashboard', async () => {
+test('resolverPosts com 5xx do dashboard: NÃO cai na pasta local, estoura como indisponível', async () => {
   const fetchImpl = async () => respostaJson(503, { error: 'fora do ar' });
-  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, log: () => {}, pickPostLocal: () => null });
+  await assert.rejects(
+    () => resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair na pasta'); } }),
+    (err) => { assert.equal(err.indisponivel, true); assert.equal(err.status, 503); return true; }
+  );
+});
+
+test('resolverPosts no disparo manual com caminho: usa o arquivo, sem chamar a API', async () => {
+  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', arg: 'posts/s/post-x.json', fetchImpl: async () => { throw new Error('não devia chamar a API'); }, pickPostLocal: () => ['posts/s/post-x.json'] });
   assert.equal(origem, 'local');
-  assert.deepEqual(posts, []);
+  assert.deepEqual(posts, ['posts/s/post-x.json']);
 });
 
 test('resolverPosts NÃO cai no fallback em 4xx (erro de config, não de disponibilidade)', async () => {
@@ -60,8 +66,8 @@ test('resolverPosts NÃO cai no fallback em 4xx (erro de config, não de disponi
   );
 });
 
-test('resolverPosts usa o fallback local direto quando as envs não existem', async () => {
-  const { origem, posts } = await resolverPosts({ apiBase: undefined, secret: undefined, pickPostLocal: () => 'posts/semana1/post-x.json' });
+test('resolverPosts usa a pasta local quando as envs da API não existem', async () => {
+  const { origem, posts } = await resolverPosts({ apiBase: undefined, secret: undefined, log: () => {}, pickPostLocal: () => ['posts/semana1/post-x.json'] });
   assert.equal(origem, 'local');
   assert.deepEqual(posts, ['posts/semana1/post-x.json']);
 });
@@ -95,8 +101,20 @@ test('filtrarProntos: só aprovado e só com schedule_at já vencido', () => {
     { id: 'auto', status: 'proposto', schedule_at: '2026-11-11T12:00:00+00:00' },
     { id: 'futuro', status: 'aprovado', schedule_at: '2026-11-11T22:30:00+00:00' },
     { id: 'sem-data', status: 'aprovado', schedule_at: null },
+    { id: 'sem-fuso', status: 'aprovado', schedule_at: '2026-11-11T19:00' }, // seria lido como 19h UTC = 16h BRT
+    { id: 'brt', status: 'aprovado', schedule_at: '2026-11-11T19:00:00-03:00' },
+    { id: 'z', status: 'aprovado', schedule_at: '2026-11-11T21:00:00.000Z' },
   ], agora, () => {});
-  assert.deepEqual(r.map((p) => p.id), ['ok']);
+  assert.deepEqual(r.map((p) => p.id), ['ok', 'brt', 'z']);
+});
+
+test('paraPublicar ordena por horário e troca imagens por images', () => {
+  const agora = Date.parse('2026-11-11T22:17:00Z');
+  const r = paraPublicar([
+    { id: 'b', status: 'aprovado', schedule_at: '2026-11-11T22:00:00+00:00', imagens: ['2.jpg'] },
+    { id: 'a', status: 'aprovado', schedule_at: '2026-11-11T18:00:00-03:00', imagens: ['1.jpg'], video: null },
+  ], agora, () => {});
+  assert.deepEqual(r.map((p) => [p.id, p.images[0]]), [['a', '1.jpg'], ['b', '2.jpg']]);
 });
 
 // ---------- relógio, janela, fila local ----------
@@ -113,16 +131,19 @@ test('horaSimulada e guarda de janela (8h a 23h BRT)', () => {
   for (let h = 0; h <= 23; h++) assert.equal(dentroDaJanela(h), h >= 8 && h <= 23, `hora ${h}`);
 });
 
-test('pickPostLocal (fallback): o post das 19h não sai antes das 19h', () => {
+test('pickPostLocal (fila local): todos os do dia cujo horário chegou, em ordem; o das 19h não sai antes das 19h', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ig-'));
   mkdirSync(join(dir, 's1'));
   const f = join(dir, 's1', 'post-a.json');
+  const g = join(dir, 's1', 'post-b.json');
   writeFileSync(f, JSON.stringify({ scheduleAt: '2026-10-29T19:00' }));
-  assert.equal(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '08:17', postsDir: dir }), null);
-  assert.equal(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '18:59', postsDir: dir }), null);
-  assert.equal(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '19:17', postsDir: dir }), f);
-  assert.equal(pickPostLocal({ todayBR: '2026-10-30', agoraBR: '19:17', postsDir: dir }), null);
-  assert.equal(pickPostLocal({ todayBR: '2026-10-29', postsDir: dir }), f); // sem hora: só pelo dia
+  writeFileSync(g, JSON.stringify({ scheduleAt: '2026-10-29T12:00:00-03:00' }));
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '08:17', postsDir: dir }), []);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '18:59', postsDir: dir }), [g]);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '19:17', postsDir: dir }), [g, f]);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-30', agoraBR: '19:17', postsDir: dir }), []);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', postsDir: dir }), [g, f]); // sem hora: só pelo dia
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', arg: 'posts/x.json', postsDir: dir }), ['posts/x.json']);
 });
 
 test('publish.yml: crons de hora em hora das 8h às 22h BRT, minuto quebrado, matriz e concurrency por conta', () => {
@@ -132,7 +153,10 @@ test('publish.yml: crons de hora em hora das 8h às 22h BRT, minuto quebrado, ma
     assert.notEqual(Number(min), 0);
     return (Number(hora) + 21) % 24;
   }).sort((a, b) => a - b);
-  assert.deepEqual(horas, Array.from({ length: 15 }, (_, i) => i + 8));
+  assert.deepEqual([...new Set(horas)], Array.from({ length: 15 }, (_, i) => i + 8));
+  assert.equal(horas.length, 16); // a repescagem das 22:47
+  assert.match(yml, /cron: '47 1 \* \* \*'/);
+  for (const h of horas) assert.ok(dentroDaJanela(h));
   assert.match(yml, /group: publish-ig-\$\{\{ matrix\.conta \}\}\s*\n\s*cancel-in-progress: false/);
 });
 
@@ -194,7 +218,7 @@ test('reporte ao dashboard falhou: o post volta na lista, mas a checagem de lege
   let falhar = true;
   const c = cenario({ reporteFalha: () => falhar });
   c.banco.push({ id: 'p8', status: 'aprovado', caption: 'legenda 8', imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(8)).toISOString() });
-  const opts = { graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async () => {}, log: () => {} };
+  const opts = { graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async () => {}, log: () => {}, logErro: () => {} };
   await publicarLista({ ...opts, posts: c.listaAgora(utcDeBRT(8, 17)) });
   assert.equal(c.banco[0].status, 'aprovado'); // o reporte se perdeu
   falhar = false;

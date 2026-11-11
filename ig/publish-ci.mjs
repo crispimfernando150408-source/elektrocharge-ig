@@ -2,8 +2,9 @@
 // das 8h às 22h BRT.
 // - Fonte da fila: GET /api/conteudo/hoje?lista=1 no dashboard (CONTEUDO_API_BASE + CONTEUDO_SECRET):
 //   TODOS os posts `aprovado` do dia cujo schedule_at já chegou. Publica a lista inteira, em ordem.
-//   Se a API estiver fora do ar (erro de rede/5xx) ou as envs não existirem, cai no fallback
-//   da pasta local `posts/` (um post do dia cujo horário já chegou; histórico/reserva).
+//   Se a API estiver fora do ar (erro de rede/5xx), sai com erro sem publicar (o run da hora
+//   seguinte tenta de novo). Pasta local `posts/` só sem as envs da API ou no disparo manual
+//   com o caminho do post (histórico/reserva).
 // - Depois de tentar publicar cada post, reporta pra API: POST .../posts/<id>/publicado com
 //   `ig_media_id` (sucesso) ou `erro` (falha). Só quando o post veio da API. O dashboard troca o
 //   status e o post sai da lista: é isso que impede o run seguinte de publicar de novo (e a
@@ -11,7 +12,7 @@
 // - Token e IG_USER_ID vêm de Secrets (process.env). Endpoint: graph.instagram.com.
 // Uso: node ig/publish-ci.mjs [caminho-do-post.json] [--dry] [--date YYYY-MM-DD]
 //   sem arg = a lista do dia · --dry = resolve e loga, mas não publica, não cria container e não reporta.
-//   --date e IG_FAKE_HOUR ("19" ou "19:30") só valem com --dry e só mudam o fallback local e a
+//   --date e IG_FAKE_HOUR ("19" ou "19:30") só valem com --dry e só mudam a fila local e a
 //   guarda de janela (a lista da API é sempre a de agora no dashboard).
 import { readFileSync } from 'node:fs';
 import {
@@ -77,13 +78,22 @@ if (DRY && !argPost && !dentroDaJanela(brtHour)) console.log(`--dry: ${agoraBR} 
 
 const IG_POLL_TIMEOUT = Number(IG_POLL_TIMEOUT_MS) || 10 * 60 * 1000;
 
-const { origem, posts: fontes } = await resolverPosts({
-  apiBase: CONTEUDO_API_BASE,
-  secret: CONTEUDO_SECRET,
-  conta: CONTA,
-  // fila local (pasta posts/) só existe para a conta elektro
-  pickPostLocal: () => (CONTA === 'elektro' ? pickPostLocal({ todayBR, agoraBR, arg: argPost }) : null),
-});
+let origem, fontes;
+try {
+  ({ origem, posts: fontes } = await resolverPosts({
+    apiBase: CONTEUDO_API_BASE,
+    secret: CONTEUDO_SECRET,
+    conta: CONTA,
+    arg: argPost,
+    // fila local (pasta posts/) só existe para a conta elektro
+    pickPostLocal: () => (CONTA === 'elektro' ? pickPostLocal({ todayBR, agoraBR, arg: argPost }) : []),
+  }));
+} catch (err) {
+  console.error(err.indisponivel
+    ? `API do dashboard indisponível (${formatarErro(err)}). Não publico nada; o run da hora seguinte tenta de novo.`
+    : `Falha ao ler a fila do dashboard: ${formatarErro(err)}`);
+  process.exit(1);
+}
 
 // normaliza os dois formatos (API x arquivo local) num único shape
 let posts;
