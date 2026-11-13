@@ -1,19 +1,29 @@
-name: Publica IG 19h
+name: Publica IG (de hora em hora)
 
 on:
   schedule:
-    # O GitHub DESCARTA/atrasa crons em hora cheia (muita gente agenda em :00).
-    # Solução: minutos "quebrados" e MUITAS tentativas na janela da noite (19–22h BRT).
-    # Idempotência garante que só 1 publica; o resto é no-op. Guarda de janela (18–23h BRT)
-    # impede post de madrugada. Só precisa que UMA dessas pegue.
-    - cron: '9 22 * * *'    # 19:09 BRT
-    - cron: '27 22 * * *'   # 19:27 BRT
-    - cron: '44 22 * * *'   # 19:44 BRT
-    - cron: '13 23 * * *'   # 20:13 BRT
-    - cron: '38 23 * * *'   # 20:38 BRT
-    - cron: '11 0 * * *'    # 21:11 BRT
-    - cron: '41 0 * * *'    # 21:41 BRT
-    - cron: '23 1 * * *'    # 22:23 BRT
+    # De hora em hora, das 8h às 22h BRT (UTC-3, sem horário de verão), no minuto 17.
+    # O GitHub atrasa/descarta crons em hora cheia, por isso o minuto quebrado. Cada run publica
+    # TODOS os posts aprovados do dia cujo schedule_at já chegou (GET /api/conteudo/hoje?lista=1)
+    # e reporta cada um ao dashboard, que o tira da lista. Se um cron falhar, o da hora seguinte
+    # pega o que ficou; o das 22:47 repesca o das 22:17. Guarda de janela (8–23h BRT) impede
+    # post de madrugada.
+    - cron: '17 11 * * *'   # 08:17 BRT
+    - cron: '17 12 * * *'   # 09:17 BRT
+    - cron: '17 13 * * *'   # 10:17 BRT
+    - cron: '17 14 * * *'   # 11:17 BRT
+    - cron: '17 15 * * *'   # 12:17 BRT
+    - cron: '17 16 * * *'   # 13:17 BRT
+    - cron: '17 17 * * *'   # 14:17 BRT
+    - cron: '17 18 * * *'   # 15:17 BRT
+    - cron: '17 19 * * *'   # 16:17 BRT
+    - cron: '17 20 * * *'   # 17:17 BRT
+    - cron: '17 21 * * *'   # 18:17 BRT
+    - cron: '17 22 * * *'   # 19:17 BRT
+    - cron: '17 23 * * *'   # 20:17 BRT
+    - cron: '17 0 * * *'    # 21:17 BRT
+    - cron: '17 1 * * *'    # 22:17 BRT
+    - cron: '47 1 * * *'    # 22:47 BRT: repescagem do último run (o GitHub às vezes descarta um cron)
   workflow_dispatch:      # permite disparo manual pra testar
     inputs:
       post:
@@ -27,15 +37,20 @@ jobs:
       fail-fast: false
       matrix:
         conta: [elektro, kaffra]
+    # Um run por conta por vez: dois runs simultâneos podiam checar o feed antes de o outro
+    # publicar. O em andamento nunca é cancelado; na fila fica só um pendente (um disparo
+    # manual pendente pode ser substituído por um cron).
     concurrency:
       group: publish-ig-${{ matrix.conta }}
       cancel-in-progress: false
+    # Um run travado seguraria os seguintes. O que não sair fica para o run seguinte.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Publicar post do dia (${{ matrix.conta }})
+      - name: Publicar posts do dia (${{ matrix.conta }})
         env:
           IG_CONTA: ${{ matrix.conta }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
@@ -44,4 +59,5 @@ jobs:
           IG_USER_ID_KAFFRA: ${{ secrets.IG_USER_ID_KAFFRA }}
           CONTEUDO_API_BASE: ${{ vars.CONTEUDO_API_BASE }}
           CONTEUDO_SECRET: ${{ secrets.CONTEUDO_SECRET }}
-        run: node ig/publish-ci.mjs ${{ github.event.inputs.post }}
+          POST_MANUAL: ${{ github.event.inputs.post }}
+        run: node ig/publish-ci.mjs $POST_MANUAL

@@ -3,77 +3,265 @@
 // que importa (escolha da fonte, retry, reporte) mora em lib.mjs e é testada aqui direto.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { credenciaisIg, buscarPostHoje, comRetry, criarGraph, paramsDoReel, pollContainer, reportarPublicado, resolverPost } from './lib.mjs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { credenciaisIg, buscarPostsHoje, comRetry, criarGraph, dentroDaJanela, filtrarProntos, horaSimulada, paraPublicar, paramsDoReel, pickPostLocal, pollContainer, publicarLista, relogioBR, reportarPublicado, resolverPosts } from './lib.mjs';
 
 function respostaJson(status, corpo) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(corpo), json: async () => corpo };
 }
 
-// ---------- resolverPost: escolha da fonte ----------
+// ---------- resolverPosts: escolha da fonte ----------
 
-test('resolverPost usa a API quando ela responde um post', async () => {
-  const fetchImpl = async () => respostaJson(200, { post: { id: 'p1', caption: 'oi', imagens: [], video: null } });
-  const { origem, post } = await resolverPost({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia chamar o fallback'); } });
+test('resolverPosts usa a API e devolve a lista', async () => {
+  const fetchImpl = async () => respostaJson(200, { post: { id: 'p1' }, posts: [{ id: 'p1' }, { id: 'p2' }] });
+  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia chamar o fallback'); } });
   assert.equal(origem, 'api');
-  assert.equal(post.id, 'p1');
+  assert.deepEqual(posts.map((p) => p.id), ['p1', 'p2']);
 });
 
-test('resolverPost usa a API e repassa post:null (nada pra hoje)', async () => {
-  const fetchImpl = async () => respostaJson(200, { post: null });
-  const { origem, post } = await resolverPost({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia chamar o fallback'); } });
+test('resolverPosts usa a API e repassa lista vazia (nada pra agora)', async () => {
+  const fetchImpl = async () => respostaJson(200, { post: null, posts: [] });
+  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia chamar o fallback'); } });
   assert.equal(origem, 'api');
-  assert.equal(post, null);
+  assert.deepEqual(posts, []);
 });
 
-test('resolverPost cai no fallback local em erro de rede', async () => {
+test('resolverPosts NÃO aceita resposta sem `posts` (dashboard antigo): nem modo antigo nem fallback', async () => {
+  const fetchImpl = async () => respostaJson(200, { post: { id: 'velho', status: 'proposto' } });
+  await assert.rejects(
+    () => resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair aqui'); } }),
+    (err) => { assert.equal(err.contrato, true); assert.match(err.message, /sem a lista/); return true; }
+  );
+});
+
+test('resolverPosts com a API configurada e fora do ar (rede): NÃO cai na pasta local, estoura como indisponível', async () => {
   const fetchImpl = async () => { throw new Error('fetch failed'); };
-  const logs = [];
-  const { origem, post } = await resolverPost({ apiBase: 'http://api', secret: 's', fetchImpl, log: (m) => logs.push(m), pickPostLocal: () => 'posts/semana1/post-x.json' });
-  assert.equal(origem, 'local');
-  assert.equal(post, 'posts/semana1/post-x.json');
-  assert.match(logs[0], /indisponível/);
+  await assert.rejects(
+    () => resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair na pasta'); } }),
+    (err) => { assert.equal(err.indisponivel, true); return true; }
+  );
 });
 
-test('resolverPost cai no fallback local em 5xx do dashboard', async () => {
+test('resolverPosts com 5xx do dashboard: NÃO cai na pasta local, estoura como indisponível', async () => {
   const fetchImpl = async () => respostaJson(503, { error: 'fora do ar' });
-  const { origem, post } = await resolverPost({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => null });
-  assert.equal(origem, 'local');
-  assert.equal(post, null);
+  await assert.rejects(
+    () => resolverPosts({ apiBase: 'http://api', secret: 's', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair na pasta'); } }),
+    (err) => { assert.equal(err.indisponivel, true); assert.equal(err.status, 503); return true; }
+  );
 });
 
-test('resolverPost NÃO cai no fallback em 4xx (erro de config, não de disponibilidade)', async () => {
+test('resolverPosts no disparo manual com caminho: usa o arquivo, sem chamar a API', async () => {
+  const { origem, posts } = await resolverPosts({ apiBase: 'http://api', secret: 's', arg: 'posts/s/post-x.json', fetchImpl: async () => { throw new Error('não devia chamar a API'); }, pickPostLocal: () => ['posts/s/post-x.json'] });
+  assert.equal(origem, 'local');
+  assert.deepEqual(posts, ['posts/s/post-x.json']);
+});
+
+test('resolverPosts NÃO cai no fallback em 4xx (erro de config, não de disponibilidade)', async () => {
   const fetchImpl = async () => respostaJson(401, { error: 'secret errado' });
   await assert.rejects(
-    () => resolverPost({ apiBase: 'http://api', secret: 'errado', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair aqui'); } }),
+    () => resolverPosts({ apiBase: 'http://api', secret: 'errado', fetchImpl, pickPostLocal: () => { throw new Error('não devia cair aqui'); } }),
     /401/
   );
 });
 
-test('resolverPost usa o fallback local direto quando as envs não existem', async () => {
-  const { origem, post } = await resolverPost({ apiBase: undefined, secret: undefined, pickPostLocal: () => 'posts/semana1/post-x.json' });
+test('resolverPosts usa a pasta local quando as envs da API não existem', async () => {
+  const { origem, posts } = await resolverPosts({ apiBase: undefined, secret: undefined, log: () => {}, pickPostLocal: () => ['posts/semana1/post-x.json'] });
   assert.equal(origem, 'local');
-  assert.equal(post, 'posts/semana1/post-x.json');
+  assert.deepEqual(posts, ['posts/semana1/post-x.json']);
 });
 
-// ---------- buscarPostHoje ----------
+// ---------- buscarPostsHoje ----------
 
-test('buscarPostHoje devolve o post do corpo da resposta', async () => {
-  const post = { id: 'abc', slug: 'seg', formato: 'reel', caption: 'x', imagens: [], video: null, schedule_at: '2026-09-13T19:00:00-03:00' };
+test('buscarPostsHoje pede ?lista=1 com o Bearer e devolve `posts`', async () => {
+  const posts = [{ id: 'abc', caption: 'x', imagens: ['https://s/1.jpg'], video: null, schedule_at: '2026-11-11T11:00:00+00:00', status: 'aprovado' }];
   const fetchImpl = async (url, opts) => {
-    assert.equal(url, 'http://api/api/conteudo/hoje?rede=instagram&conta=elektro');
+    assert.equal(url, 'http://api/api/conteudo/hoje?rede=instagram&conta=elektro&lista=1');
     assert.equal(opts.headers.authorization, 'Bearer segredo');
-    return respostaJson(200, { post });
+    return respostaJson(200, { post: posts[0], posts });
   };
-  const resultado = await buscarPostHoje({ apiBase: 'http://api', secret: 'segredo', fetchImpl });
-  assert.deepEqual(resultado, post);
+  assert.deepEqual(await buscarPostsHoje({ apiBase: 'http://api', secret: 'segredo', fetchImpl }), posts);
 });
 
-test('buscarPostHoje marca err.status em resposta de erro HTTP', async () => {
+test('buscarPostsHoje marca err.status em resposta de erro HTTP', async () => {
   const fetchImpl = async () => respostaJson(500, { error: 'boom' });
   await assert.rejects(
-    () => buscarPostHoje({ apiBase: 'http://api', secret: 's', fetchImpl }),
+    () => buscarPostsHoje({ apiBase: 'http://api', secret: 's', fetchImpl }),
     (err) => { assert.equal(err.status, 500); return true; }
   );
+});
+
+// ---------- filtrarProntos (defesa em profundidade sobre a lista) ----------
+
+test('filtrarProntos: só aprovado e só com schedule_at já vencido', () => {
+  const agora = Date.parse('2026-11-11T22:17:00Z'); // 19:17 BRT
+  const r = filtrarProntos([
+    { id: 'ok', status: 'aprovado', schedule_at: '2026-11-11T22:00:00+00:00' },
+    { id: 'auto', status: 'proposto', schedule_at: '2026-11-11T12:00:00+00:00' },
+    { id: 'futuro', status: 'aprovado', schedule_at: '2026-11-11T22:30:00+00:00' },
+    { id: 'sem-data', status: 'aprovado', schedule_at: null },
+    { id: 'sem-fuso', status: 'aprovado', schedule_at: '2026-11-11T19:00' }, // seria lido como 19h UTC = 16h BRT
+    { id: 'brt', status: 'aprovado', schedule_at: '2026-11-11T19:00:00-03:00' },
+    { id: 'z', status: 'aprovado', schedule_at: '2026-11-11T21:00:00.000Z' },
+  ], agora, () => {});
+  assert.deepEqual(r.map((p) => p.id), ['ok', 'brt', 'z']);
+});
+
+test('paraPublicar ordena por horário e troca imagens por images', () => {
+  const agora = Date.parse('2026-11-11T22:17:00Z');
+  const r = paraPublicar([
+    { id: 'b', status: 'aprovado', schedule_at: '2026-11-11T22:00:00+00:00', imagens: ['2.jpg'] },
+    { id: 'a', status: 'aprovado', schedule_at: '2026-11-11T18:00:00-03:00', imagens: ['1.jpg'], video: null },
+  ], agora, () => {});
+  assert.deepEqual(r.map((p) => [p.id, p.images[0]]), [['a', '1.jpg'], ['b', '2.jpg']]);
+});
+
+// ---------- relógio, janela, fila local ----------
+
+test('relogioBR: 01:17 UTC do dia 12 ainda é 22:17 do dia 11 em Brasília', () => {
+  assert.deepEqual(relogioBR(new Date('2026-11-12T01:17:00Z')), { hojeBR: '2026-11-11', brtHour: 22, agoraBR: '22:17' });
+  assert.deepEqual(relogioBR(new Date('2026-11-11T11:17:00Z')), { hojeBR: '2026-11-11', brtHour: 8, agoraBR: '08:17' });
+});
+
+test('horaSimulada e guarda de janela (8h a 23h BRT)', () => {
+  assert.equal(horaSimulada('8'), '08:00');
+  assert.equal(horaSimulada('19:30'), '19:30');
+  assert.throws(() => horaSimulada('25'), /IG_FAKE_HOUR/);
+  for (let h = 0; h <= 23; h++) assert.equal(dentroDaJanela(h), h >= 8 && h <= 23, `hora ${h}`);
+});
+
+test('pickPostLocal (fila local): todos os do dia cujo horário chegou, em ordem; o das 19h não sai antes das 19h', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ig-'));
+  mkdirSync(join(dir, 's1'));
+  const f = join(dir, 's1', 'post-a.json');
+  const g = join(dir, 's1', 'post-b.json');
+  writeFileSync(f, JSON.stringify({ scheduleAt: '2026-10-29T19:00' }));
+  writeFileSync(g, JSON.stringify({ scheduleAt: '2026-10-29T12:00:00-03:00' }));
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '08:17', postsDir: dir }), []);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '18:59', postsDir: dir }), [g]);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', agoraBR: '19:17', postsDir: dir }), [g, f]);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-30', agoraBR: '19:17', postsDir: dir }), []);
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', postsDir: dir }), [g, f]); // sem hora: só pelo dia
+  assert.deepEqual(pickPostLocal({ todayBR: '2026-10-29', arg: 'posts/x.json', postsDir: dir }), ['posts/x.json']);
+});
+
+test('publish.yml: crons de hora em hora das 8h às 22h BRT, minuto quebrado, matriz e concurrency por conta', () => {
+  const yml = readFileSync(new URL('../.github/workflows/publish.yml', import.meta.url), 'utf8');
+  const horas = [...yml.matchAll(/cron:\s*'([^']+)'/g)].map((m) => m[1].split(/\s+/)).map(([min, hora, ...resto]) => {
+    assert.equal(resto.join(' '), '* * *');
+    assert.notEqual(Number(min), 0);
+    return (Number(hora) + 21) % 24;
+  }).sort((a, b) => a - b);
+  assert.deepEqual([...new Set(horas)], Array.from({ length: 15 }, (_, i) => i + 8));
+  assert.equal(horas.length, 16); // a repescagem das 22:47
+  assert.match(yml, /cron: '47 1 \* \* \*'/);
+  for (const h of horas) assert.ok(dentroDaJanela(h));
+  assert.match(yml, /group: publish-ig-\$\{\{ matrix\.conta \}\}\s*\n\s*cancel-in-progress: false/);
+});
+
+// ---------- publicarLista: vários runs de hora em hora sem duplicar ----------
+
+// Dashboard falso (só `aprovado` com schedule_at vencido; /publicado troca o status) e conta do
+// Instagram falsa (feed em memória). Simula o que acontece entre runs seguidos.
+function cenario({ reporteFalha = () => false } = {}) {
+  const feed = [];
+  const banco = [];
+  const graph = async (path, opts = {}) => {
+    assert.equal(path, 'u/media');
+    return { data: feed.slice(0, Number(opts.params.limit)) };
+  };
+  let n = 0;
+  const publicar = async (post) => { const id = `m${++n}`; feed.unshift({ id, caption: post.caption }); return id; };
+  const reportes = [];
+  const reportar = async (post, campos) => {
+    reportes.push({ id: post.id, ...campos });
+    if (reporteFalha(post)) return; // o publicador engole o erro do reporte; o banco não muda
+    const linha = banco.find((p) => p.id === post.id);
+    linha.status = campos.erro ? 'falhou' : 'publicado';
+  };
+  // o que a rota ?lista=1 devolve, passado pelo mesmo paraPublicar do script
+  const listaAgora = (agoraMs) => paraPublicar(banco
+    .filter((p) => p.status === 'aprovado' && Date.parse(p.schedule_at) <= agoraMs)
+    .sort((a, b) => Date.parse(a.schedule_at) - Date.parse(b.schedule_at))
+    .map((p) => ({ id: p.id, caption: p.caption, imagens: p.imagens, video: p.video, schedule_at: p.schedule_at, status: p.status })), agoraMs, () => {});
+  return { feed, banco, graph, publicar, reportar, reportes, listaAgora };
+}
+const utcDeBRT = (h, m = 0) => Date.UTC(2026, 10, 11, h + 3, m);
+
+test('runs de hora em hora (08:17 a 22:17): 15 aprovados saem uma vez cada, no run do seu horário; proposto não sai', async () => {
+  const c = cenario();
+  for (let h = 8; h <= 22; h++) c.banco.push({ id: `p${h}`, status: 'aprovado', caption: `legenda ${h}`, imagens: ['https://s/1.jpg'], video: null, schedule_at: new Date(utcDeBRT(h)).toISOString() });
+  c.banco.push({ id: 'auto', status: 'proposto', faixa: 'auto', caption: 'auto', imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(9)).toISOString() });
+  for (let h = 8; h <= 22; h++) {
+    const agora = utcDeBRT(h, 17);
+    const posts = c.listaAgora(agora);
+    const { publicados } = await publicarLista({ posts, graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async () => {}, log: () => {} });
+    assert.deepEqual(publicados.map((p) => p.nome), [`p${h}`], `run das ${h}:17`);
+  }
+  assert.equal(c.feed.length, 15);
+  assert.equal(new Set(c.feed.map((m) => m.caption)).size, 15);
+  assert.equal(c.banco.find((p) => p.id === 'auto').status, 'proposto');
+});
+
+test('cron que falhou: o run seguinte publica o atrasado e o da hora, com espera entre eles', async () => {
+  const c = cenario();
+  for (const h of [8, 9]) c.banco.push({ id: `p${h}`, status: 'aprovado', caption: `legenda ${h}`, imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(h)).toISOString() });
+  const esperas = [];
+  const agora = utcDeBRT(9, 17);
+  const { publicados } = await publicarLista({ posts: c.listaAgora(agora), graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async (ms) => esperas.push(ms), log: () => {} });
+  assert.deepEqual(publicados.map((p) => p.nome), ['p8', 'p9']);
+  assert.deepEqual(esperas, [60000]);
+});
+
+test('reporte ao dashboard falhou: o post volta na lista, mas a checagem de legenda não republica e reporta o id existente', async () => {
+  let falhar = true;
+  const c = cenario({ reporteFalha: () => falhar });
+  c.banco.push({ id: 'p8', status: 'aprovado', caption: 'legenda 8', imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(8)).toISOString() });
+  const opts = { graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async () => {}, log: () => {}, logErro: () => {} };
+  await publicarLista({ ...opts, posts: c.listaAgora(utcDeBRT(8, 17)) });
+  assert.equal(c.banco[0].status, 'aprovado'); // o reporte se perdeu
+  falhar = false;
+  const r2 = await publicarLista({ ...opts, posts: c.listaAgora(utcDeBRT(9, 17)) });
+  assert.deepEqual(r2.publicados, []);
+  assert.deepEqual(r2.pulados, ['p8']);
+  assert.equal(c.feed.length, 1);
+  assert.equal(c.banco[0].status, 'publicado');
+  assert.deepEqual(c.reportes.at(-1), { id: 'p8', ig_media_id: 'm1' });
+});
+
+test('checagem do feed falhando para o run sem publicar nem reportar', async () => {
+  const c = cenario();
+  c.banco.push({ id: 'p8', status: 'aprovado', caption: 'x', imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(8)).toISOString() });
+  let publicou = 0;
+  await assert.rejects(
+    publicarLista({ posts: c.listaAgora(utcDeBRT(8, 17)), graph: async () => { throw new Error('Graph 500 em u/media: {}'); }, igUserId: 'u', publicar: async () => { publicou++; return 'x'; }, reportar: c.reportar, log: () => {}, logErro: () => {} }),
+    (e) => e.checagem === true,
+  );
+  assert.equal(publicou, 0);
+  assert.deepEqual(c.reportes, []);
+});
+
+test('publicação falhando: reporta erro desse post e para o run; os seguintes saem no run da hora seguinte', async () => {
+  const c = cenario();
+  for (const h of [8, 9, 10]) c.banco.push({ id: `p${h}`, status: 'aprovado', caption: `legenda ${h}`, imagens: h === 8 ? [] : ['https://s/1.jpg'], video: null, schedule_at: new Date(utcDeBRT(h)).toISOString() });
+  const opts = { graph: c.graph, igUserId: 'u', publicar: c.publicar, reportar: c.reportar, sleepFn: async () => {}, log: () => {}, logErro: () => {} };
+  await assert.rejects(publicarLista({ ...opts, posts: c.listaAgora(utcDeBRT(10, 17)) }), (e) => e.publicacao === true);
+  assert.equal(c.banco.find((p) => p.id === 'p8').status, 'falhou');
+  assert.match(c.reportes[0].erro, /sem imagens nem vídeo/);
+  assert.equal(c.feed.length, 0);
+  const r2 = await publicarLista({ ...opts, posts: c.listaAgora(utcDeBRT(11, 17)) });
+  assert.deepEqual(r2.publicados.map((p) => p.nome), ['p9', 'p10']);
+});
+
+test('--dry: não publica, não reporta, e checagem falhando não para', async () => {
+  const c = cenario();
+  c.banco.push({ id: 'p8', status: 'aprovado', caption: 'x', imagens: ['https://s/1.jpg'], schedule_at: new Date(utcDeBRT(8)).toISOString() });
+  const vistos = [];
+  const r = await publicarLista({ posts: c.listaAgora(utcDeBRT(8, 17)), dry: true, graph: async () => { throw new Error('ENOTFOUND'); }, igUserId: 'u', publicar: async (p) => { vistos.push(p.id); return null; }, reportar: c.reportar, log: () => {} });
+  assert.deepEqual(vistos, ['p8']);
+  assert.deepEqual(r.publicados, []);
+  assert.deepEqual(c.reportes, []);
 });
 
 // ---------- reportarPublicado ----------
@@ -219,11 +407,11 @@ test('credenciaisIg: elektro usa os nomes sem sufixo; kaffra usa sufixo; faltand
   assert.equal(credenciaisIg({ IG_ACCESS_TOKEN_KAFFRA: 'b' }, 'kaffra'), null);
 });
 
-test('buscarPostHoje pede a conta certa', async () => {
+test('buscarPostsHoje pede a conta certa', async () => {
   const urls = [];
-  const fetchImpl = async (url) => { urls.push(url); return respostaJson(200, { post: null }); };
-  await buscarPostHoje({ apiBase: 'http://api', secret: 's', conta: 'kaffra', fetchImpl });
-  assert.match(urls[0], /\/api\/conteudo\/hoje\?rede=instagram&conta=kaffra$/);
-  await buscarPostHoje({ apiBase: 'http://api', secret: 's', fetchImpl });
-  assert.match(urls[1], /conta=elektro$/);
+  const fetchImpl = async (url) => { urls.push(url); return respostaJson(200, { post: null, posts: [] }); };
+  await buscarPostsHoje({ apiBase: 'http://api', secret: 's', conta: 'kaffra', fetchImpl });
+  assert.match(urls[0], /\/api\/conteudo\/hoje\?rede=instagram&conta=kaffra&lista=1$/);
+  await buscarPostsHoje({ apiBase: 'http://api', secret: 's', fetchImpl });
+  assert.match(urls[1], /conta=elektro&lista=1$/);
 });
